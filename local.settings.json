@@ -1,0 +1,10 @@
+{
+  "IsEncrypted": true,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "CfDJ8CmiirGeqklCnHKFPqa+W013Hqa7NBU2uZYyho0AooOkzVbrbl0zvfcpQCzSNpHmDaiQqQj7wNfMf3nFISV+6tT8Q2yXAWK+WUCLvK161KVPYGRR9OamP7VyPReV0DZrSg=="
+  },
+  "ConnectionStrings": {},
+  "Host": {
+    "LocalHttpPort": 7071
+  }
+}

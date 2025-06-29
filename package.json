@@ -1,0 +1,46 @@
+{
+  "name": "nubestock-backend",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "prestart": "npm run build",
+    "start": "func start",
+    "test": "jest",
+    "mutation": "stryker run",
+    "dev": "nodemon --watch ./src --ext ts --exec npm run build && func start"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Nubestock/nubestock-backend.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Nubestock/nubestock-backend/issues"
+  },
+  "homepage": "https://github.com/Nubestock/nubestock-backend#readme",
+  "description": "",
+  "dependencies": {
+    "@azure/service-bus": "^7.9.5",
+    "axios": "^1.10.0",
+    "js-sha256": "^0.11.1",
+    "luxon": "^3.6.1",
+    "moment-timezone": "^0.6.0",
+    "pdf-to-base64": "^1.0.3",
+    "remove-accents": "^0.5.0",
+    "winston": "^3.17.0"
+  },
+  "devDependencies": {
+    "@azure/functions": "^3.5.0",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.0.7",
+    "axios-mock-adapter": "^2.1.0",
+    "jest": "^30.0.3",
+    "stub-azure-function-context": "^2.5.1",
+    "ts-jest": "^29.4.0",
+    "typescript": "^5.8.3"
+  }
+}
