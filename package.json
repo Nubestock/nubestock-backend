@@ -9,7 +9,7 @@
     "start": "func start",
     "test": "jest",
     "mutation": "stryker run",
-    "dev": "nodemon --watch ./src --ext ts --exec npm run build && func start"
+    "dev": "nvm use 14 && func start"
   },
   "repository": {
     "type": "git",
