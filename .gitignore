@@ -1,0 +1,100 @@
+# -----------------------------
+# .gitignore generado — Node + TypeScript + Azure Functions
+# Mantén este archivo en el repositorio; edítalo si tu proyecto necesita
+# excepciones específicas (por ejemplo, conservar algún archivo de config).
+# -----------------------------
+
+# Dependencias
+node_modules/
+
+# Archivos de entorno / secretos (muy importante para Azure Functions)
+local.settings.json
+.env
+.env.local
+.env.*.local
+# conservar ejemplos de env
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build / outputs
+dist/
+build/
+out/
+lib/
+esm/
+cjs/
+.next/
+.nuxt/
+/.parcel-cache/
+
+# TypeScript
+*.tsbuildinfo
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Testing
+jest-junit.xml
+
+# Caches
+.cache/
+.parcel-cache/
+.turbo/
+.vercel/
+
+# Editor / OS
+.vscode/
+.idea/
+*.suo
+*.ntvs_analysis.dat
+*.njsproj
+*.sln
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# VS Code workspace settings
+.vscode/*
+!.vscode/extensions.json
+
+# JetBrains
+*.iml
+
+# pnpm / yarn v2 v3
+.pnp.*
+/.pnp
+/.pnpm-store/
+
+# Docker
+docker-compose.override.yml
+
+# Azure / deployment
+.publish/
+azure-pipelines.yml
+azure-pipelines/*
+*.azure*
+
+# Function tools / artifacts
+bin/
+obj/
+*.funcpack
+
+# Misc
+Thumbs.db
+ehthumbs.db
+Icon?
+
+# Keep the following if you intentionally track them in your repo:
+# - host.json (Azure Functions host config)
+# - function.json (each function folder)
+# - production/ or logs/ if you want them tracked, remove from this file
