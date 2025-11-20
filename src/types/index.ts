@@ -49,10 +49,17 @@ export interface Category extends BaseEntity {
 }
 
 export interface Origin extends BaseEntity {
+  idorigin: string;
   nameorigin: string;
   idfacility: string;
-  province: string;
-  city?: string;
+  idprovince: string; // UUID foreign key to tb_mae_province
+  idcity?: string; // UUID foreign key to tb_mae_city
+  // Optional: populated location info when using JOIN
+  province_name?: string;
+  city_name?: string;
+  country_name?: string;
+  country_code?: string;
+  full_location?: string;
 }
 
 export interface Material extends BaseEntity {

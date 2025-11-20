@@ -33,9 +33,7 @@ const salesHandler: AzureFunction = async (context: Context, req: HttpRequest): 
 
     switch (method) {
       case 'GET':
-        if (action === 'clients') {
-          await handleGetClients(context, req);
-        } else if (action === 'stats') {
+        if (action === 'stats') {
           await handleGetSalesStats(context, req);
         } else if (action === 'overdue') {
           await handleGetOverdueSales(context, req);
@@ -108,9 +106,9 @@ async function handleListSales(context: Context, req: HttpRequest): Promise<void
         'c.ruc_cedula',
         'u.nameuser'
       )
-      .from('tb_ope_sales as s')
-      .leftJoin('tb_mae_client as c', 's.idclient', 'c.idclient')
-      .leftJoin('tb_mae_user as u', 's.iduser', 'u.iduser')
+      .from('nubestock.tb_ope_sales as s')
+      .leftJoin('nubestock.tb_mae_client as c', 's.idclient', 'c.idclient')
+      .leftJoin('nubestock.tb_mae_user as u', 's.iduser', 'u.iduser')
       .where('s.isactive', true)
       .orderBy('s.sale_date', 'desc');
 
@@ -179,9 +177,9 @@ async function handleGetSale(context: Context, req: HttpRequest, saleId: string)
         'c.phone',
         'u.nameuser'
       )
-      .from('tb_ope_sales as s')
-      .leftJoin('tb_mae_client as c', 's.idclient', 'c.idclient')
-      .leftJoin('tb_mae_user as u', 's.iduser', 'u.iduser')
+      .from('nubestock.tb_ope_sales as s')
+      .leftJoin('nubestock.tb_mae_client as c', 's.idclient', 'c.idclient')
+      .leftJoin('nubestock.tb_mae_user as u', 's.iduser', 'u.iduser')
       .where('s.idsale', saleId)
       .where('s.isactive', true)
       .first();
@@ -204,11 +202,11 @@ async function handleGetSale(context: Context, req: HttpRequest, saleId: string)
         'sd.*',
         'fp.product_name',
         'fp.sku',
-        'c.namecategory'
+        'cat.namecategory'
       )
-      .from('tb_ope_sales_detail as sd')
-      .leftJoin('tb_mae_final_product as fp', 'sd.idfinal_product', 'fp.idfinal_product')
-      .leftJoin('tb_mae_category as c', 'fp.idcategory', 'c.idcategory')
+      .from('nubestock.tb_ope_sales_detail as sd')
+      .leftJoin('nubestock.tb_mae_final_product as fp', 'sd.idfinal_product', 'fp.idfinal_product')
+      .leftJoin('nubestock.tb_mae_category as cat', 'fp.idcategory', 'cat.idcategory')
       .where('sd.idsale', saleId)
       .where('sd.isactive', true);
 
@@ -276,7 +274,7 @@ async function handleCreateSale(context: Context, req: HttpRequest): Promise<voi
     }
 
     // Verificar que el cliente existe
-    const client = await db.findById<Client>('tb_mae_client', value.idclient);
+    const client = await db.findById<Client>('nubestock.tb_mae_client', value.idclient);
     if (!client) {
       context.res = {
         status: 404,
@@ -289,10 +287,39 @@ async function handleCreateSale(context: Context, req: HttpRequest): Promise<voi
       return;
     }
 
+    // Verificar stock disponible para cada producto
+    for (const detail of value.details) {
+      const product = await db.findById<any>('nubestock.tb_mae_final_product', detail.idfinal_product);
+      if (!product) {
+        context.res = {
+          status: 404,
+          body: {
+            success: false,
+            message: `Producto con ID ${detail.idfinal_product} no encontrado`,
+            timestamp: new Date().toISOString(),
+          },
+        };
+        return;
+      }
+      
+      const currentStock = parseFloat(String(product.current_stock || 0));
+      if (currentStock < detail.quantity) {
+        context.res = {
+          status: 400,
+          body: {
+            success: false,
+            message: `Stock insuficiente para el producto ${product.product_name || 'desconocido'}. Stock disponible: ${currentStock}, solicitado: ${detail.quantity}`,
+            timestamp: new Date().toISOString(),
+          },
+        };
+        return;
+      }
+    }
+
     // Usar transacción para crear la venta y sus detalles
     const result = await db.transaction(async (trx) => {
       // Crear la venta
-      const [sale] = await trx('tb_ope_sales')
+      const [sale] = await trx('nubestock.tb_ope_sales')
         .insert({
           idclient: value.idclient,
           iduser: value.iduser,
@@ -307,7 +334,7 @@ async function handleCreateSale(context: Context, req: HttpRequest): Promise<voi
         .returning('*');
 
       // Crear los detalles de la venta
-      const details = await trx('tb_ope_sales_detail')
+      const details = await trx('nubestock.tb_ope_sales_detail')
         .insert(
           value.details.map(detail => ({
             idsale: sale.idsale,
@@ -320,20 +347,26 @@ async function handleCreateSale(context: Context, req: HttpRequest): Promise<voi
         )
         .returning('*');
 
-      // Crear transacciones de inventario (salida de productos)
-      await trx('tb_ope_transaction')
-        .insert(
-          value.details.map(detail => ({
+      // Actualizar stock de productos y crear transacciones de inventario
+      for (const detail of value.details) {
+        // Actualizar stock del producto (reducir cantidad)
+        await trx('nubestock.tb_mae_final_product')
+          .where('idfinal_product', detail.idfinal_product)
+          .decrement('current_stock', detail.quantity);
+
+        // Crear transacción de inventario (salida de productos)
+        await trx('nubestock.tb_ope_transaction')
+          .insert({
             iduser: value.iduser,
             idfinal_product: detail.idfinal_product,
             transaction_type: 'sale',
             quantity: -detail.quantity, // Negativo porque es salida
             unit_of_measure: 'units',
             transaction_date: new Date(),
-            notes: `Venta - ${detail.quantity} unidades`,
+            notes: `Venta ${sale.idsale} - ${detail.quantity} unidades`,
             isactive: true,
-          }))
-        );
+          });
+      }
 
       return { sale, details };
     });
@@ -389,7 +422,7 @@ async function handleUpdatePaymentStatus(context: Context, req: HttpRequest): Pr
       return;
     }
 
-    const updatedSale = await db.update('tb_ope_sales', saleId, {
+    const updatedSale = await db.update('nubestock.tb_ope_sales', saleId, {
       payment_status,
       modificationdate: new Date(),
     });
@@ -422,67 +455,6 @@ async function handleUpdatePaymentStatus(context: Context, req: HttpRequest): Pr
       body: {
         success: false,
         message: 'Error al actualizar estado de pago',
-        timestamp: new Date().toISOString(),
-      },
-    };
-  }
-}
-
-async function handleGetClients(context: Context, req: HttpRequest): Promise<void> {
-  try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 10;
-    const search = req.query.search as string;
-    const isactive = req.query.isactive as string;
-
-    let query = db.getConnection()
-      .select('*')
-      .from('tb_mae_client')
-      .orderBy('client_name');
-
-    // Aplicar filtros
-    if (search) {
-      query = query.where(function() {
-        this.where('client_name', 'ilike', `%${search}%`)
-          .orWhere('business_name', 'ilike', `%${search}%`)
-          .orWhere('ruc_cedula', 'ilike', `%${search}%`);
-      });
-    }
-
-    if (isactive !== undefined) {
-      query = query.where('isactive', isactive === 'true');
-    }
-
-    // Contar total
-    const totalQuery = query.clone();
-    const result = await totalQuery.count('* as count');
-    const total = parseInt((result[0] as any).count as string);
-
-    // Aplicar paginación
-    const offset = (page - 1) * limit;
-    const clients = await query.offset(offset).limit(limit);
-
-    context.res = {
-      status: 200,
-      body: {
-        success: true,
-        data: clients,
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages: Math.ceil(total / limit),
-        },
-        timestamp: new Date().toISOString(),
-      },
-    };
-  } catch (error) {
-    logger.error('Error al obtener clientes:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al obtener clientes',
         timestamp: new Date().toISOString(),
       },
     };
@@ -526,7 +498,7 @@ async function handleCreateClient(context: Context, req: HttpRequest): Promise<v
     // Verificar si el RUC/Cédula ya existe
     const existingClient = await db.getConnection()
       .select('idclient')
-      .from('tb_mae_client')
+      .from('nubestock.tb_mae_client')
       .where('ruc_cedula', value.ruc_cedula)
       .first();
 
@@ -542,7 +514,7 @@ async function handleCreateClient(context: Context, req: HttpRequest): Promise<v
       return;
     }
 
-    const newClient = await db.create('tb_mae_client', {
+    const newClient = await db.create('nubestock.tb_mae_client', {
       ...value,
       isactive: true,
     });
@@ -582,7 +554,7 @@ async function handleGetSalesStats(context: Context, req: HttpRequest): Promise<
         db.getConnection().raw('AVG(total_amount) as average_sale'),
         db.getConnection().raw('COUNT(DISTINCT idclient) as unique_clients')
       )
-      .from('tb_ope_sales')
+      .from('nubestock.tb_ope_sales')
       .where('sale_date', '>=', startDate)
       .where('sale_date', '<=', endDate)
       .where('isactive', true)
@@ -595,7 +567,7 @@ async function handleGetSalesStats(context: Context, req: HttpRequest): Promise<
         db.getConnection().raw('COUNT(*) as count'),
         db.getConnection().raw('SUM(total_amount) as total_amount')
       )
-      .from('tb_ope_sales')
+      .from('nubestock.tb_ope_sales')
       .where('sale_date', '>=', startDate)
       .where('sale_date', '<=', endDate)
       .where('isactive', true)
@@ -609,8 +581,8 @@ async function handleGetSalesStats(context: Context, req: HttpRequest): Promise<
         db.getConnection().raw('SUM(s.total_amount) as total_purchased'),
         db.getConnection().raw('COUNT(s.idsale) as sales_count')
       )
-      .from('tb_ope_sales as s')
-      .leftJoin('tb_mae_client as c', 's.idclient', 'c.idclient')
+      .from('nubestock.tb_ope_sales as s')
+      .leftJoin('nubestock.tb_mae_client as c', 's.idclient', 'c.idclient')
       .where('s.sale_date', '>=', startDate)
       .where('s.sale_date', '<=', endDate)
       .where('s.isactive', true)
@@ -658,8 +630,8 @@ async function handleGetOverdueSales(context: Context, req: HttpRequest): Promis
         'c.email',
         'c.phone'
       )
-      .from('tb_ope_sales as s')
-      .leftJoin('tb_mae_client as c', 's.idclient', 'c.idclient')
+      .from('nubestock.tb_ope_sales as s')
+      .leftJoin('nubestock.tb_mae_client as c', 's.idclient', 'c.idclient')
       .where('s.payment_status', 'overdue')
       .where('s.isactive', true)
       .orderBy('s.payment_due_date', 'asc');
@@ -715,7 +687,7 @@ async function handleUpdateSale(context: Context, req: HttpRequest, saleId: stri
     }
 
     // Verificar si la venta existe
-    const existingSale = await db.findById<Sale>('tb_ope_sales', saleId);
+    const existingSale = await db.findById<Sale>('nubestock.tb_ope_sales', saleId);
     if (!existingSale) {
       context.res = {
         status: 404,
@@ -728,7 +700,7 @@ async function handleUpdateSale(context: Context, req: HttpRequest, saleId: stri
       return;
     }
 
-    const updatedSale = await db.update('tb_ope_sales', saleId, {
+    const updatedSale = await db.update('nubestock.tb_ope_sales', saleId, {
       ...value,
       modificationdate: new Date(),
     });

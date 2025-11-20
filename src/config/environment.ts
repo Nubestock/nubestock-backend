@@ -8,18 +8,18 @@ export const config = {
 
   // Configuración de la base de datos
   database: {
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT || '5432'),
-    user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD || 'password',
-    name: process.env.DB_NAME || 'nubestock',
+    host: process.env.DATABASE_HOSTNAME || 'localhost',
+    port: parseInt(process.env.DATABASE_PORT || '5432'),
+    user: process.env.DATABASE_USERNAME || 'postgres',
+    password: process.env.DATABASE_PASSWORD || 'password',
+    name: process.env.DATABASE_NAME || 'nubestock',
     ssl: process.env.DB_SSL === 'true',
     schema: 'nubestock',
   },
 
   // Configuración de JWT
   jwt: {
-    secret: process.env.JWT_SECRET || 'your-secret-key',
+    secret: process.env.JWT_SECRET ,
     expiresIn: process.env.JWT_EXPIRES_IN || '24h',
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
   },
@@ -78,10 +78,10 @@ export const config = {
 // Validación de configuración requerida
 export const validateConfig = (): void => {
   const requiredEnvVars = [
-    'DB_HOST',
-    'DB_USER',
-    'DB_PASSWORD',
-    'DB_NAME',
+    'DATABASE_HOSTNAME',
+    'DATABASE_USERNAME',
+    'DATABASE_PASSWORD',
+    'DATABASE_NAME',
     'JWT_SECRET',
   ];
 

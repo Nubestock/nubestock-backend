@@ -24,6 +24,22 @@ const getIdColumnForTable = (table: string): string => {
       return 'idavailability';
     case 'tb_ope_transaction':
       return 'idtransaction';
+    case 'tb_mae_final_product':
+      return 'idfinal_product';
+    case 'tb_mae_alert':
+      return 'idalert';
+    case 'tb_mae_client':
+      return 'idclient';
+    case 'tb_mae_country':
+      return 'idcountry';
+    case 'tb_mae_province':
+      return 'idprovince';
+    case 'tb_mae_city':
+      return 'idcity';
+    case 'tb_ope_sales':
+      return 'idsale';
+    case 'tb_ope_sales_detail':
+      return 'idsales_detail';
     default:
       return 'id';
   }

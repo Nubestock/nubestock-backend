@@ -1,0 +1,44 @@
+name: Deploy Backend to Azure Functions
+
+on:
+  push:
+    branches:
+      - develop
+      - uat
+      - master
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment a desplegar'
+        required: false
+        type: choice
+        options:
+          - NUBESTOCK_DEV
+          - NUBESTOCK_UAT
+          - NUBESTOCK_PRD
+        default: 'NUBESTOCK_DEV'
+
+jobs:
+  deploy:
+
+    uses: Nubestock/nubestock-workflows/.github/workflows/functions-deploy-action.yml@master
+    with:
+      environment: ${{ github.event.inputs.environment || (github.ref_name == 'develop' && 'NUBESTOCK_DEV' || github.ref_name == 'uat' && 'NUBESTOCK_UAT' || github.ref_name == 'master' && 'NUBESTOCK_PRD' || 'NUBESTOCK_DEV') }}
+      node_version: '20'
+    secrets:
+      # Secrets de Azure (Autenticación)
+      AZ_CLIENT_ID: ${{ secrets.AZ_CLIENT_ID }}
+      AZ_TENANT_ID: ${{ secrets.AZ_TENANT_ID }}
+      AZ_SUBSCRIPTION_ID: ${{ secrets.AZ_SUBSCRIPTION_ID }}
+      
+      # Secrets de Azure (Recursos)
+      AZ_FUNCTION_APP_NAME: ${{ secrets.AZ_FUNCTION_APP_NAME }}
+      AZ_RESOURCE_GROUP: ${{ secrets.AZ_RESOURCE_GROUP }}
+      
+      # Secrets de Base de Datos
+      DATABASE_HOSTNAME: ${{ secrets.DATABASE_HOSTNAME }}
+      DATABASE_PORT: ${{ secrets.DATABASE_PORT }}
+      DATABASE_USERNAME: ${{ secrets.DATABASE_USERNAME }}
+      DATABASE_PASSWORD: ${{ secrets.DATABASE_PASSWORD }}
+      DATABASE_NAME: ${{ secrets.DATABASE_NAME }}
+

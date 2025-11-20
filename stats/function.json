@@ -5,8 +5,8 @@
       "type": "httpTrigger",
       "direction": "in",
       "name": "req",
-      "methods": ["get", "post", "put", "delete"],
-      "route": "products/{action?}/{subaction?}"
+      "methods": ["get"],
+      "route": "stats"
     },
     {
       "type": "http",
@@ -14,5 +14,6 @@
       "name": "res"
     }
   ],
-  "scriptFile": "../dist/products/index.js"
+  "scriptFile": "../dist/stats/index.js"
 }
+

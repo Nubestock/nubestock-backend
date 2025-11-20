@@ -15,6 +15,8 @@ local.settings.json
 # conservar ejemplos de env
 !.env.example
 
+postman/*
+
 # Logs
 logs/
 *.log

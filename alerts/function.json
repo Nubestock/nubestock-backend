@@ -6,7 +6,7 @@
       "direction": "in",
       "name": "req",
       "methods": ["get", "post", "put", "delete"],
-      "route": "products/{action?}/{subaction?}"
+      "route": "alerts/{action?}"
     },
     {
       "type": "http",
@@ -14,5 +14,6 @@
       "name": "res"
     }
   ],
-  "scriptFile": "../dist/products/index.js"
+  "scriptFile": "../dist/alerts/index.js"
 }
+
