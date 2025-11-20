@@ -21,7 +21,6 @@ on:
 jobs:
   deploy:
     permissions:
-      id-token: write
       contents: read
     uses: Nubestock/nubestock-workflows/.github/workflows/functions-deploy-action.yml@master
     with:
@@ -30,6 +29,7 @@ jobs:
     secrets:
       # Secrets de Azure (Autenticación)
       AZ_CLIENT_ID: ${{ secrets.AZ_CLIENT_ID }}
+      AZ_CLIENT_SECRET: ${{ secrets.AZ_CLIENT_SECRET }}
       AZ_TENANT_ID: ${{ secrets.AZ_TENANT_ID }}
       AZ_SUBSCRIPTION_ID: ${{ secrets.AZ_SUBSCRIPTION_ID }}
       
