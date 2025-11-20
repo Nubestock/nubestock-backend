@@ -20,7 +20,9 @@ on:
 
 jobs:
   deploy:
-
+    permissions:
+      id-token: write
+      contents: read
     uses: Nubestock/nubestock-workflows/.github/workflows/functions-deploy-action.yml@master
     with:
       environment: ${{ github.event.inputs.environment || (github.ref_name == 'develop' && 'NUBESTOCK_DEV' || github.ref_name == 'uat' && 'NUBESTOCK_UAT' || github.ref_name == 'master' && 'NUBESTOCK_PRD' || 'NUBESTOCK_DEV') }}
