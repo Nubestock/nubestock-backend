@@ -2,7 +2,7 @@ import { AzureFunction, Context, HttpRequest } from '../src/types/azure-function
 import { Database } from '../src/config/database';
 import { logger } from '../src/config/logger';
 import { User, QueryFilters } from '../src/types';
-import { requireAuth } from '../src/middleware/authMiddleware';
+import { requireAuth, requireAdmin, requireAnyPermission } from '../src/middleware/authMiddleware';
 import Joi from 'joi';
 
 const db = Database.getInstance();
@@ -18,11 +18,34 @@ const usersHandler: AzureFunction = async (context: Context, req: HttpRequest): 
       url: req.url,
     });
 
-    // Verificar autenticación
-    const authResult = requireAuth(req);
+    // Verificar autenticación y permisos según el método
+    // Los usuarios requieren permisos de administrador
+    let authResult: { success: boolean; user?: any; error?: string };
+    
+    switch (method) {
+      case 'GET':
+        // GET requiere permiso de lectura de usuarios
+        authResult = requireAnyPermission(req, ['users_read', 'users_manage']);
+        break;
+      case 'POST':
+        // POST requiere permiso de escritura/gestión de usuarios
+        authResult = requireAnyPermission(req, ['users_write', 'users_manage']);
+        break;
+      case 'PUT':
+        // PUT requiere permiso de escritura/gestión de usuarios
+        authResult = requireAnyPermission(req, ['users_write', 'users_manage']);
+        break;
+      case 'DELETE':
+        // DELETE requiere permiso de gestión de usuarios (solo admin)
+        authResult = requireAnyPermission(req, ['users_manage']);
+        break;
+      default:
+        authResult = requireAuth(req);
+    }
+
     if (!authResult.success) {
       context.res = {
-        status: 401,
+        status: authResult.error?.includes('permisos') ? 403 : 401,
         body: {
           success: false,
           message: authResult.error || 'Usuario no autenticado',
@@ -105,51 +128,84 @@ async function handleListUsers(context: Context, req: HttpRequest): Promise<void
     const search = req.query.search as string;
     const isactive = req.query.isactive as string;
 
-        let query = db.getConnection()
-          .select('iduser', 'nameuser', 'email', 'phone', 'isactive', 'last_login', 'creationdate')
-          .from('nubestock.tb_mae_user')
-          .orderBy('creationdate', 'desc');
+    let query = db.getConnection()
+      .select(
+        'u.iduser',
+        'u.nameuser',
+        'u.email',
+        'u.phone',
+        'u.isactive',
+        'u.last_login',
+        'u.creationdate'
+      )
+      .from('nubestock.tb_mae_user as u')
+      .orderBy('u.creationdate', 'desc');
 
     // Aplicar filtros
     if (search) {
       query = query.where(function() {
-        this.where('nameuser', 'ilike', `%${search}%`)
-          .orWhere('email', 'ilike', `%${search}%`);
+        this.where('u.nameuser', 'ilike', `%${search}%`)
+          .orWhere('u.email', 'ilike', `%${search}%`);
       });
     }
 
     if (isactive !== undefined) {
-      query = query.where('isactive', isactive === 'true');
+      query = query.where('u.isactive', isactive === 'true');
     }
 
-        // Contar total usando query builder para evitar problemas de parámetros
-        const countQuery = db.getConnection()
-          .count('* as count')
-          .from('nubestock.tb_mae_user');
+    // Contar total usando query builder para evitar problemas de parámetros
+    const countQuery = db.getConnection()
+      .count('* as count')
+      .from('nubestock.tb_mae_user as u');
 
-        if (search) {
-          countQuery.where(function() {
-            this.where('nameuser', 'ilike', `%${search}%`)
-              .orWhere('email', 'ilike', `%${search}%`);
-          });
-        }
+    if (search) {
+      countQuery.where(function() {
+        this.where('u.nameuser', 'ilike', `%${search}%`)
+          .orWhere('u.email', 'ilike', `%${search}%`);
+      });
+    }
 
-        if (isactive !== undefined) {
-          countQuery.where('isactive', isactive === 'true');
-        }
+    if (isactive !== undefined) {
+      countQuery.where('u.isactive', isactive === 'true');
+    }
 
-        const countResult = await countQuery;
-        const total = parseInt((countResult[0] as any).count as string);
+    const countResult = await countQuery;
+    const total = parseInt((countResult[0] as any).count as string);
 
     // Aplicar paginación
     const offset = (page - 1) * limit;
     const users = await query.offset(offset).limit(limit);
 
+    // Obtener roles para cada usuario
+    const userIds = users.map((u: any) => u.iduser);
+    const userRoles = await db.getConnection()
+      .select('ur.iduser', 'r.namerole')
+      .from('nubestock.tb_mae_user_role as ur')
+      .join('nubestock.tb_mae_role as r', 'ur.idrole', 'r.idrole')
+      .whereIn('ur.iduser', userIds)
+      .where('ur.isactive', true)
+      .where('r.isactive', true);
+
+    // Agrupar roles por usuario
+    const rolesByUser: Record<string, string[]> = {};
+    userRoles.forEach((ur: any) => {
+      if (!rolesByUser[ur.iduser]) {
+        rolesByUser[ur.iduser] = [];
+      }
+      rolesByUser[ur.iduser].push(ur.namerole);
+    });
+
+    // Agregar roles a cada usuario
+    const usersWithRoles = users.map((user: any) => ({
+      ...user,
+      roles: rolesByUser[user.iduser] || [],
+    }));
+
     context.res = {
       status: 200,
       body: {
         success: true,
-        data: users,
+        data: usersWithRoles,
         pagination: {
           page,
           limit,

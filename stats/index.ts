@@ -1,7 +1,7 @@
 import { AzureFunction, Context, HttpRequest } from '../src/types/azure-functions';
 import { Database } from '../src/config/database';
 import { logger } from '../src/config/logger';
-import { requireAuth } from '../src/middleware/authMiddleware';
+import { requireAuth, requireAnyPermission } from '../src/middleware/authMiddleware';
 
 const db = Database.getInstance();
 
@@ -76,11 +76,11 @@ interface StatsResponse {
 
 const statsHandler: AzureFunction = async (context: Context, req: HttpRequest): Promise<void> => {
   try {
-    // Verificar autenticación
-    const authResult = requireAuth(req);
+    // Verificar autenticación y permisos (stats requiere permiso de lectura general o admin)
+    const authResult = requireAnyPermission(req, ['stats_read', 'admin', 'users_manage']);
     if (!authResult.success) {
       context.res = {
-        status: 401,
+        status: authResult.error?.includes('permisos') ? 403 : 401,
         body: {
           success: false,
           message: authResult.error || 'No autorizado',
@@ -90,6 +90,7 @@ const statsHandler: AzureFunction = async (context: Context, req: HttpRequest): 
       return;
     }
 
+    const startTime = Date.now();
     logger.info('Stats function triggered', {
       method: req.method,
       url: req.url,
@@ -101,63 +102,175 @@ const statsHandler: AzureFunction = async (context: Context, req: HttpRequest): 
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const startOfYear = new Date(now.getFullYear(), 0, 1);
+    const startOfMonthStr = startOfMonth.toISOString().split('T')[0];
+    const startOfYearStr = startOfYear.toISOString().split('T')[0];
 
-    // Estadísticas de productos
-    const productsTotal = await connection('nubestock.tb_mae_final_product')
-      .count('* as count')
-      .first();
-    
-    const productsActive = await connection('nubestock.tb_mae_final_product')
-      .where('isactive', true)
-      .count('* as count')
-      .first();
+    // Ejecutar todas las queries en paralelo para máximo rendimiento
+    const [
+      // Productos
+      productsTotal,
+      productsActive,
+      productsLowStock,
+      inventoryValueResult,
+      // Categorías
+      categoriesTotal,
+      categoriesActive,
+      // Ventas generales
+      salesTotal,
+      salesActive,
+      salesCancelled,
+      salesByStatus,
+      // Valores de ventas (combinadas en una query con CASE)
+      salesValuesResult,
+      // Ventas del mes y año
+      salesThisMonth,
+      salesValueThisMonth,
+      salesThisYear,
+      salesValueThisYear,
+      // Clientes
+      clientsTotal,
+      clientsActive,
+      clientsWithCredit,
+      clientsCreditLimit,
+      // Producción
+      productionTotal,
+      productionThisMonth,
+      productionThisYear,
+      // Alertas
+      alertsTotal,
+      alertsActive,
+      alertsByPriority,
+      alertsByType,
+      // Usuarios
+      usersTotal,
+      usersActive,
+      // Transacciones
+      transactionsTotal,
+      transactionsThisMonth,
+    ] = await Promise.all([
+      // Productos
+      connection('nubestock.tb_mae_final_product').count('* as count').first(),
+      connection('nubestock.tb_mae_final_product').where('isactive', true).count('* as count').first(),
+      connection('nubestock.tb_mae_final_product')
+        .where('isactive', true)
+        .whereRaw('current_stock < minimum_stock')
+        .count('* as count')
+        .first(),
+      connection('nubestock.tb_mae_final_product')
+        .where('isactive', true)
+        .select(connection.raw('COALESCE(SUM(current_stock * unit_price), 0) as total'))
+        .first(),
+      // Categorías
+      connection('nubestock.tb_mae_category').count('* as count').first(),
+      connection('nubestock.tb_mae_category').where('isactive', true).count('* as count').first(),
+      // Ventas generales
+      connection('nubestock.tb_ope_sales').count('* as count').first(),
+      connection('nubestock.tb_ope_sales').where('isactive', true).count('* as count').first(),
+      connection('nubestock.tb_ope_sales')
+        .where('payment_status', 'cancelled')
+        .where('isactive', true)
+        .count('* as count')
+        .first(),
+      connection('nubestock.tb_ope_sales')
+        .where('isactive', true)
+        .select('payment_status')
+        .count('* as count')
+        .groupBy('payment_status'),
+      // Valores de ventas combinados en una sola query
+      connection('nubestock.tb_ope_sales')
+        .where('isactive', true)
+        .select(
+          connection.raw('COALESCE(SUM(total_amount), 0) as total_value'),
+          connection.raw('COALESCE(SUM(CASE WHEN payment_status = \'paid\' THEN total_amount ELSE 0 END), 0) as paid_value'),
+          connection.raw('COALESCE(SUM(CASE WHEN payment_status = \'pending\' THEN total_amount ELSE 0 END), 0) as pending_value'),
+          connection.raw('COALESCE(SUM(CASE WHEN payment_status = \'overdue\' THEN total_amount ELSE 0 END), 0) as overdue_value')
+        )
+        .first(),
+      // Ventas del mes
+      connection('nubestock.tb_ope_sales')
+        .where('isactive', true)
+        .where('sale_date', '>=', startOfMonthStr)
+        .count('* as count')
+        .first(),
+      connection('nubestock.tb_ope_sales')
+        .where('isactive', true)
+        .where('sale_date', '>=', startOfMonthStr)
+        .sum('total_amount as total')
+        .first(),
+      // Ventas del año
+      connection('nubestock.tb_ope_sales')
+        .where('isactive', true)
+        .where('sale_date', '>=', startOfYearStr)
+        .count('* as count')
+        .first(),
+      connection('nubestock.tb_ope_sales')
+        .where('isactive', true)
+        .where('sale_date', '>=', startOfYearStr)
+        .sum('total_amount as total')
+        .first(),
+      // Clientes
+      connection('nubestock.tb_mae_client').count('* as count').first(),
+      connection('nubestock.tb_mae_client').where('isactive', true).count('* as count').first(),
+      connection('nubestock.tb_mae_client')
+        .where('isactive', true)
+        .where('requires_credit', true)
+        .count('* as count')
+        .first(),
+      connection('nubestock.tb_mae_client')
+        .where('isactive', true)
+        .where('requires_credit', true)
+        .sum('credit_limit as total')
+        .first(),
+      // Producción
+      connection('nubestock.tb_ope_daily_production')
+        .where('isactive', true)
+        .count('* as count')
+        .first(),
+      connection('nubestock.tb_ope_daily_production')
+        .where('isactive', true)
+        .where('production_date', '>=', startOfMonthStr)
+        .count('* as count')
+        .first(),
+      connection('nubestock.tb_ope_daily_production')
+        .where('isactive', true)
+        .where('production_date', '>=', startOfYearStr)
+        .count('* as count')
+        .first(),
+      // Alertas
+      connection('nubestock.tb_mae_alert').count('* as count').first(),
+      connection('nubestock.tb_mae_alert')
+        .where('isactive', true)
+        .where('status', 'active')
+        .count('* as count')
+        .first(),
+      connection('nubestock.tb_mae_alert')
+        .where('isactive', true)
+        .where('status', 'active')
+        .select('priority')
+        .count('* as count')
+        .groupBy('priority'),
+      connection('nubestock.tb_mae_alert')
+        .where('isactive', true)
+        .where('status', 'active')
+        .select('alert_type')
+        .count('* as count')
+        .groupBy('alert_type'),
+      // Usuarios
+      connection('nubestock.tb_mae_user').count('* as count').first(),
+      connection('nubestock.tb_mae_user').where('isactive', true).count('* as count').first(),
+      // Transacciones
+      connection('nubestock.tb_ope_transaction')
+        .where('isactive', true)
+        .count('* as count')
+        .first(),
+      connection('nubestock.tb_ope_transaction')
+        .where('isactive', true)
+        .where('transaction_date', '>=', startOfMonth.toISOString())
+        .count('* as count')
+        .first(),
+    ]);
 
-    const productsLowStock = await connection('nubestock.tb_mae_final_product')
-      .where('isactive', true)
-      .whereRaw('current_stock < minimum_stock')
-      .count('* as count')
-      .first();
-
-    const inventoryValueResult = await connection('nubestock.tb_mae_final_product')
-      .where('isactive', true)
-      .select(connection.raw('SUM(current_stock * unit_price) as total'))
-      .first();
-    
-    const inventoryValue = inventoryValueResult as any;
-
-    // Estadísticas de categorías
-    const categoriesTotal = await connection('nubestock.tb_mae_category')
-      .count('* as count')
-      .first();
-
-    const categoriesActive = await connection('nubestock.tb_mae_category')
-      .where('isactive', true)
-      .count('* as count')
-      .first();
-
-    // Estadísticas de ventas
-    const salesTotal = await connection('nubestock.tb_ope_sales')
-      .count('* as count')
-      .first();
-
-    const salesActive = await connection('nubestock.tb_ope_sales')
-      .where('isactive', true)
-      .count('* as count')
-      .first();
-
-    const salesCancelled = await connection('nubestock.tb_ope_sales')
-      .where('payment_status', 'cancelled')
-      .where('isactive', true)
-      .count('* as count')
-      .first();
-
-    // Ventas por estado
-    const salesByStatus = await connection('nubestock.tb_ope_sales')
-      .where('isactive', true)
-      .select('payment_status')
-      .count('* as count')
-      .groupBy('payment_status');
-
+    // Procesar resultados
     const salesByStatusMap: Record<string, number> = {
       pending: 0,
       paid: 0,
@@ -165,118 +278,10 @@ const statsHandler: AzureFunction = async (context: Context, req: HttpRequest): 
       cancelled: 0,
     };
 
-    salesByStatus.forEach((row: any) => {
+    (salesByStatus as any[]).forEach((row: any) => {
       const status = row.payment_status || 'pending';
       salesByStatusMap[status] = parseInt(String(row.count || 0), 10);
     });
-
-    // Valores de ventas
-    const salesTotalValue = await connection('nubestock.tb_ope_sales')
-      .where('isactive', true)
-      .sum('total_amount as total')
-      .first();
-
-    const salesPaidValue = await connection('nubestock.tb_ope_sales')
-      .where('isactive', true)
-      .where('payment_status', 'paid')
-      .sum('total_amount as total')
-      .first();
-
-    const salesPendingValue = await connection('nubestock.tb_ope_sales')
-      .where('isactive', true)
-      .where('payment_status', 'pending')
-      .sum('total_amount as total')
-      .first();
-
-    const salesOverdueValue = await connection('nubestock.tb_ope_sales')
-      .where('isactive', true)
-      .where('payment_status', 'overdue')
-      .sum('total_amount as total')
-      .first();
-
-    // Ventas del mes actual
-    const salesThisMonth = await connection('nubestock.tb_ope_sales')
-      .where('isactive', true)
-      .where('sale_date', '>=', startOfMonth.toISOString().split('T')[0])
-      .count('* as count')
-      .first();
-
-    const salesValueThisMonth = await connection('nubestock.tb_ope_sales')
-      .where('isactive', true)
-      .where('sale_date', '>=', startOfMonth.toISOString().split('T')[0])
-      .sum('total_amount as total')
-      .first();
-
-    // Ventas del año actual
-    const salesThisYear = await connection('nubestock.tb_ope_sales')
-      .where('isactive', true)
-      .where('sale_date', '>=', startOfYear.toISOString().split('T')[0])
-      .count('* as count')
-      .first();
-
-    const salesValueThisYear = await connection('nubestock.tb_ope_sales')
-      .where('isactive', true)
-      .where('sale_date', '>=', startOfYear.toISOString().split('T')[0])
-      .sum('total_amount as total')
-      .first();
-
-    // Estadísticas de clientes
-    const clientsTotal = await connection('nubestock.tb_mae_client')
-      .count('* as count')
-      .first();
-
-    const clientsActive = await connection('nubestock.tb_mae_client')
-      .where('isactive', true)
-      .count('* as count')
-      .first();
-
-    const clientsWithCredit = await connection('nubestock.tb_mae_client')
-      .where('isactive', true)
-      .where('requires_credit', true)
-      .count('* as count')
-      .first();
-
-    const clientsCreditLimit = await connection('nubestock.tb_mae_client')
-      .where('isactive', true)
-      .where('requires_credit', true)
-      .sum('credit_limit as total')
-      .first();
-
-    // Estadísticas de producción
-    const productionTotal = await connection('nubestock.tb_ope_daily_production')
-      .where('isactive', true)
-      .count('* as count')
-      .first();
-
-    const productionThisMonth = await connection('nubestock.tb_ope_daily_production')
-      .where('isactive', true)
-      .where('production_date', '>=', startOfMonth.toISOString().split('T')[0])
-      .count('* as count')
-      .first();
-
-    const productionThisYear = await connection('nubestock.tb_ope_daily_production')
-      .where('isactive', true)
-      .where('production_date', '>=', startOfYear.toISOString().split('T')[0])
-      .count('* as count')
-      .first();
-
-    // Estadísticas de alertas
-    const alertsTotal = await connection('nubestock.tb_mae_alert')
-      .count('* as count')
-      .first();
-
-    const alertsActive = await connection('nubestock.tb_mae_alert')
-      .where('isactive', true)
-      .where('status', 'active')
-      .count('* as count')
-      .first();
-
-    const alertsByPriority = await connection('nubestock.tb_mae_alert')
-      .where('isactive', true)
-      .where('status', 'active')
-      .select('priority')
-      .count('* as count')
-      .groupBy('priority');
 
     const alertsByPriorityMap: Record<string, number> = {
       low: 0,
@@ -284,47 +289,21 @@ const statsHandler: AzureFunction = async (context: Context, req: HttpRequest): 
       high: 0,
     };
 
-    alertsByPriority.forEach((row: any) => {
+    (alertsByPriority as any[]).forEach((row: any) => {
       const priority = (row.priority || 'medium').toLowerCase();
       if (priority in alertsByPriorityMap) {
         alertsByPriorityMap[priority] = parseInt(String(row.count || 0), 10);
       }
     });
 
-    const alertsByType = await connection('nubestock.tb_mae_alert')
-      .where('isactive', true)
-      .where('status', 'active')
-      .select('alert_type')
-      .count('* as count')
-      .groupBy('alert_type');
-
     const alertsByTypeMap: Record<string, number> = {};
-    alertsByType.forEach((row: any) => {
+    (alertsByType as any[]).forEach((row: any) => {
       const type = row.alert_type || 'unknown';
       alertsByTypeMap[type] = parseInt(String(row.count || 0), 10);
     });
 
-    // Estadísticas de usuarios
-    const usersTotal = await connection('nubestock.tb_mae_user')
-      .count('* as count')
-      .first();
-
-    const usersActive = await connection('nubestock.tb_mae_user')
-      .where('isactive', true)
-      .count('* as count')
-      .first();
-
-    // Estadísticas de transacciones
-    const transactionsTotal = await connection('nubestock.tb_ope_transaction')
-      .where('isactive', true)
-      .count('* as count')
-      .first();
-
-    const transactionsThisMonth = await connection('nubestock.tb_ope_transaction')
-      .where('isactive', true)
-      .where('transaction_date', '>=', startOfMonth.toISOString())
-      .count('* as count')
-      .first();
+    const salesValues = salesValuesResult as any;
+    const inventoryValue = inventoryValueResult as any;
 
     // Construir respuesta
     const stats: StatsResponse = {
@@ -350,10 +329,10 @@ const statsHandler: AzureFunction = async (context: Context, req: HttpRequest): 
           overdue: salesByStatusMap.overdue || 0,
           cancelled: salesByStatusMap.cancelled || 0,
         },
-        totalValue: parseFloat(String(salesTotalValue?.total || 0)),
-        paidValue: parseFloat(String(salesPaidValue?.total || 0)),
-        pendingValue: parseFloat(String(salesPendingValue?.total || 0)),
-        overdueValue: parseFloat(String(salesOverdueValue?.total || 0)),
+        totalValue: parseFloat(String(salesValues?.total_value || 0)),
+        paidValue: parseFloat(String(salesValues?.paid_value || 0)),
+        pendingValue: parseFloat(String(salesValues?.pending_value || 0)),
+        overdueValue: parseFloat(String(salesValues?.overdue_value || 0)),
         thisMonth: {
           count: parseInt(String(salesThisMonth?.count || 0), 10),
           value: parseFloat(String(salesValueThisMonth?.total || 0)),
@@ -396,11 +375,14 @@ const statsHandler: AzureFunction = async (context: Context, req: HttpRequest): 
       },
     };
 
+    const executionTime = Date.now() - startTime;
+
     context.res = {
       status: 200,
       body: {
         success: true,
         data: stats,
+        executionTime: `${executionTime}ms`,
         timestamp: new Date().toISOString(),
       },
     };

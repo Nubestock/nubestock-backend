@@ -1,7 +1,7 @@
 import { AzureFunction, Context, HttpRequest } from '../src/types/azure-functions';
 import { Database } from '../src/config/database';
 import { logger } from '../src/config/logger';
-import { requireAuth } from '../src/middleware/authMiddleware';
+import { requireAuth, requireAnyPermission } from '../src/middleware/authMiddleware';
 import Joi from 'joi';
 
 const db = Database.getInstance();
@@ -17,11 +17,29 @@ const clientsHandler: AzureFunction = async (context: Context, req: HttpRequest)
       url: req.url,
     });
 
-    // Verificar autenticación
-    const authResult = requireAuth(req);
+    // Verificar autenticación y permisos según el método
+    let authResult: { success: boolean; user?: any; error?: string };
+    
+    switch (method) {
+      case 'GET':
+        // GET requiere permiso de lectura de clientes o ventas
+        authResult = requireAnyPermission(req, ['clients_read', 'sales_read']);
+        break;
+      case 'POST':
+        // POST requiere permiso de escritura de clientes o ventas
+        authResult = requireAnyPermission(req, ['clients_write', 'sales_write']);
+        break;
+      case 'PUT':
+        // PUT requiere permiso de escritura de clientes o ventas
+        authResult = requireAnyPermission(req, ['clients_write', 'sales_write']);
+        break;
+      default:
+        authResult = requireAuth(req);
+    }
+
     if (!authResult.success) {
       context.res = {
-        status: 401,
+        status: authResult.error?.includes('permisos') ? 403 : 401,
         body: {
           success: false,
           message: authResult.error || 'Usuario no autenticado',

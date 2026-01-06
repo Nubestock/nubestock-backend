@@ -40,7 +40,7 @@ async function generateStockAlert(product: any): Promise<void> {
     logger.error('Error al generar alerta de stock bajo:', error);
   }
 }
-import { requireAuth } from '../src/middleware/authMiddleware';
+import { requireAuth, requirePermission, requireAnyPermission } from '../src/middleware/authMiddleware';
 import Joi from 'joi';
 
 const db = Database.getInstance();
@@ -56,11 +56,39 @@ const productsHandler: AzureFunction = async (context: Context, req: HttpRequest
       url: req.url,
     });
 
-    // Verificar autenticación usando el middleware
-    const authResult = requireAuth(req);
+    // Verificar autenticación y permisos según el método y acción
+    let authResult: { success: boolean; user?: any; error?: string };
+    
+    switch (method) {
+      case 'GET':
+        // GET requiere permiso de lectura de productos
+        authResult = requireAnyPermission(req, ['products_read', 'inventory_manage', 'production_read']);
+        break;
+      case 'POST':
+        // POST requiere permiso de escritura de productos
+        if (action === 'recipe') {
+          authResult = requireAnyPermission(req, ['products_write', 'inventory_manage']);
+        } else if (action === 'material' || action === 'category') {
+          authResult = requireAnyPermission(req, ['products_write', 'inventory_manage']);
+        } else {
+          authResult = requireAnyPermission(req, ['products_write', 'inventory_manage']);
+        }
+        break;
+      case 'PUT':
+        // PUT requiere permiso de escritura de productos
+        authResult = requireAnyPermission(req, ['products_write', 'inventory_manage']);
+        break;
+      case 'DELETE':
+        // DELETE requiere permiso de escritura de productos
+        authResult = requireAnyPermission(req, ['products_write', 'inventory_manage']);
+        break;
+      default:
+        authResult = requireAuth(req);
+    }
+
     if (!authResult.success) {
       context.res = {
-        status: 401,
+        status: authResult.error?.includes('permisos') ? 403 : 401,
         body: {
           success: false,
           message: authResult.error || 'Usuario no autenticado',
@@ -330,7 +358,7 @@ async function handleGetProduct(context: Context, req: HttpRequest, productId: s
         'm.cost_per_unit'
       )
       .from('nubestock.tb_mae_product_recipe as pr')
-      .join('tb_mae_material as m', 'pr.idmaterial', 'm.idmaterial')
+      .join('nubestock.tb_mae_material as m', 'pr.idmaterial', 'm.idmaterial')
       .where('pr.idfinal_product', productId)
       .where('pr.isactive', true)
       .where('m.isactive', true);
@@ -1232,40 +1260,78 @@ async function handleGetRecipes(context: Context, req: HttpRequest): Promise<voi
   try {
     const productId = req.query.productId as string;
 
-    if (!productId) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'ID de producto requerido',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
-
-    const recipes = await db.getConnection()
+    let query = db.getConnection()
       .select(
         'pr.idrecipe',
+        'pr.idfinal_product',
         'pr.quantity',
+        'pr.isactive',
+        'pr.creationdate',
+        'pr.modificationdate',
         'm.idmaterial',
         'm.material_name',
         'm.material_code',
         'm.material_type',
         'm.unit_of_measure',
-        'm.cost_per_unit'
+        'm.cost_per_unit',
+        'fp.product_name',
+        'fp.sku'
       )
       .from('nubestock.tb_mae_product_recipe as pr')
-      .join('tb_mae_material as m', 'pr.idmaterial', 'm.idmaterial')
-      .where('pr.idfinal_product', productId)
+      .join('nubestock.tb_mae_material as m', 'pr.idmaterial', 'm.idmaterial')
+      .join('nubestock.tb_mae_final_product as fp', 'pr.idfinal_product', 'fp.idfinal_product')
       .where('pr.isactive', true)
-      .where('m.isactive', true);
+      .where('m.isactive', true)
+      .where('fp.isactive', true)
+      .orderBy('pr.creationdate', 'desc');
+
+    // Si se proporciona productId, filtrar por ese producto
+    if (productId) {
+      query = query.where('pr.idfinal_product', productId);
+    }
+
+    const recipes = await query;
+
+    // Agrupar recetas por producto
+    const recipesByProduct = recipes.reduce((acc: any, recipe: any) => {
+      const productId = recipe.idfinal_product;
+      
+      if (!acc[productId]) {
+        acc[productId] = {
+          idfinal_product: productId,
+          product_name: recipe.product_name,
+          sku: recipe.sku,
+          materials: []
+        };
+      }
+      
+      acc[productId].materials.push({
+        idrecipe: recipe.idrecipe,
+        idmaterial: recipe.idmaterial,
+        material_name: recipe.material_name,
+        material_code: recipe.material_code,
+        material_type: recipe.material_type,
+        unit_of_measure: recipe.unit_of_measure,
+        cost_per_unit: parseFloat(recipe.cost_per_unit),
+        quantity: parseFloat(recipe.quantity),
+        isactive: recipe.isactive,
+        creationdate: recipe.creationdate,
+        modificationdate: recipe.modificationdate
+      });
+      
+      return acc;
+    }, {});
+
+    // Convertir el objeto agrupado a array
+    const groupedRecipes = Object.values(recipesByProduct);
 
     context.res = {
       status: 200,
       body: {
         success: true,
-        data: recipes,
+        data: groupedRecipes,
+        count: groupedRecipes.length,
+        totalRecipes: groupedRecipes.length, // Número de productos agrupados
         timestamp: new Date().toISOString(),
       },
     };
@@ -1284,10 +1350,15 @@ async function handleGetRecipes(context: Context, req: HttpRequest): Promise<voi
 
 async function handleCreateRecipe(context: Context, req: HttpRequest): Promise<void> {
   try {
+    // Esquema para validar la estructura: acepta un array de materiales
     const recipeSchema = Joi.object({
       idfinal_product: Joi.string().uuid().required(),
-      idmaterial: Joi.string().uuid().required(),
-      quantity: Joi.number().positive().required(),
+      materials: Joi.array().items(
+        Joi.object({
+          idmaterial: Joi.string().uuid().required(),
+          quantity: Joi.number().positive().required(),
+        })
+      ).min(1).required(),
     });
 
     const { error, value } = recipeSchema.validate(req.body);
@@ -1308,39 +1379,92 @@ async function handleCreateRecipe(context: Context, req: HttpRequest): Promise<v
       return;
     }
 
-    // Verificar si la receta ya existe
-    const existingRecipe = await db.getConnection()
-      .select('idrecipe')
-      .from('nubestock.tb_mae_product_recipe')
-      .where('idfinal_product', value.idfinal_product)
-      .where('idmaterial', value.idmaterial)
+    const { idfinal_product, materials } = value;
+
+    // Verificar que el producto existe
+    const product = await db.getConnection()
+      .select('*')
+      .from('nubestock.tb_mae_final_product')
+      .where('idfinal_product', idfinal_product)
       .where('isactive', true)
       .first();
-
-    if (existingRecipe) {
+    if (!product) {
       context.res = {
-        status: 400,
+        status: 404,
         body: {
           success: false,
-          message: 'La receta ya existe',
+          message: 'Producto no encontrado',
           timestamp: new Date().toISOString(),
         },
       };
       return;
     }
 
-    const newRecipe = await db.create('tb_mae_product_recipe', {
-      ...value,
-      quantity: value.quantity || 1.0,
-      isactive: true,
-    });
+    // Verificar que todos los materiales existen
+    const materialIds = materials.map((m: any) => m.idmaterial);
+    const existingMaterials = await db.getConnection()
+      .select('idmaterial')
+      .from('nubestock.tb_mae_material')
+      .whereIn('idmaterial', materialIds)
+      .where('isactive', true);
+
+    if (existingMaterials.length !== materialIds.length) {
+      const foundIds = existingMaterials.map((m: any) => m.idmaterial);
+      const missingIds = materialIds.filter((id: string) => !foundIds.includes(id));
+      
+      context.res = {
+        status: 400,
+        body: {
+          success: false,
+          message: 'Algunos materiales no existen o están inactivos',
+          missingMaterials: missingIds,
+          timestamp: new Date().toISOString(),
+        },
+      };
+      return;
+    }
+
+    // Verificar si alguna receta ya existe (para evitar duplicados)
+    const existingRecipes = await db.getConnection()
+      .select('idmaterial')
+      .from('nubestock.tb_mae_product_recipe')
+      .where('idfinal_product', idfinal_product)
+      .whereIn('idmaterial', materialIds)
+      .where('isactive', true);
+
+    if (existingRecipes.length > 0) {
+      const existingMaterialIds = existingRecipes.map((r: any) => r.idmaterial);
+      context.res = {
+        status: 400,
+        body: {
+          success: false,
+          message: 'Algunas recetas ya existen para este producto',
+          existingMaterials: existingMaterialIds,
+          timestamp: new Date().toISOString(),
+        },
+      };
+      return;
+    }
+
+    // Crear todas las recetas
+    const createdRecipes = [];
+    for (const material of materials) {
+      const newRecipe = await db.create('nubestock.tb_mae_product_recipe', {
+        idfinal_product,
+        idmaterial: material.idmaterial,
+        quantity: material.quantity,
+        isactive: true,
+        creationdate: new Date(),
+      });
+      createdRecipes.push(newRecipe);
+    }
 
     context.res = {
       status: 201,
       body: {
         success: true,
-        data: newRecipe,
-        message: 'Receta creada exitosamente',
+        data: createdRecipes,
+        message: `${createdRecipes.length} receta(s) creada(s) exitosamente`,
         timestamp: new Date().toISOString(),
       },
     };

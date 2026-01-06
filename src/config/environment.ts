@@ -1,3 +1,6 @@
+// Cargar variables de entorno ANTES de crear el objeto config
+import './loadEnv';
+
 export const config = {
   // Configuración del servidor
   server: {
@@ -19,7 +22,10 @@ export const config = {
 
   // Configuración de JWT
   jwt: {
-    secret: process.env.JWT_SECRET ,
+    get secret() {
+      // Evaluar lazy para asegurar que JWT_SECRET se haya cargado desde loadEnv
+      return process.env.JWT_SECRET || '';
+    },
     expiresIn: process.env.JWT_EXPIRES_IN || '24h',
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
   },
@@ -72,6 +78,21 @@ export const config = {
     bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS || '12'),
     maxLoginAttempts: parseInt(process.env.MAX_LOGIN_ATTEMPTS || '5'),
     lockoutDuration: parseInt(process.env.LOCKOUT_DURATION || '300000'), // 5 minutos
+    passwordResetTokenExpiry: parseInt(process.env.PASSWORD_RESET_TOKEN_EXPIRY || '3600000'), // 1 hora en ms
+  },
+
+  // Configuración de email (Azure Communication Services)
+  email: {
+    enabled: process.env.EMAIL_ENABLED === 'true',
+    connectionString: process.env.AZURE_COMMUNICATION_CONNECTION_STRING || '',
+    from: process.env.EMAIL_FROM || 'DoNotReply@nubestock.com',
+    fromName: process.env.EMAIL_FROM_NAME || 'Nubestock',
+  },
+
+  // Configuración de URLs de la aplicación
+  app: {
+    frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
+    resetPasswordPath: process.env.RESET_PASSWORD_PATH || '/reset-password',
   },
 };
 

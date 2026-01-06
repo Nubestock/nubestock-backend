@@ -2,38 +2,86 @@ import { AzureFunction, Context, HttpRequest } from '../src/types/azure-function
 import { Database } from '../src/config/database';
 import { logger } from '../src/config/logger';
 import { Sale, SalesDetail, Client } from '../src/types';
+import { requireAuth, requireAnyPermission } from '../src/middleware/authMiddleware';
+import { 
+  handleDailySalesReport, 
+  handleSalesByClientReport, 
+  handleTopProductsReport, 
+  handleDashboardSummaryReport 
+} from './reports';
 import Joi from 'joi';
 
 const db = Database.getInstance();
 
 const salesHandler: AzureFunction = async (context: Context, req: HttpRequest): Promise<void> => {
   try {
-    const { action } = req.params;
+    const { action, subaction } = req.params;
     const method = req.method;
     
     logger.info('Sales function triggered', {
       action,
+      subaction,
       method,
       url: req.url,
     });
 
-    // Verificar autenticación
-    const userId = req.headers['x-user-id'] as string;
-    if (!userId) {
+    // Verificar autenticación y permisos según el método y acción
+    let authResult: { success: boolean; user?: any; error?: string };
+    
+    switch (method) {
+      case 'GET':
+        // GET requiere permiso de lectura de ventas
+        authResult = requireAnyPermission(req, ['sales_read']);
+        break;
+      case 'POST':
+        // POST requiere permiso de escritura de ventas
+        authResult = requireAnyPermission(req, ['sales_write']);
+        break;
+      case 'PUT':
+        // PUT requiere permiso de escritura de ventas
+        authResult = requireAnyPermission(req, ['sales_write']);
+        break;
+      default:
+        authResult = requireAuth(req);
+    }
+
+    if (!authResult.success) {
       context.res = {
-        status: 401,
+        status: authResult.error?.includes('permisos') ? 403 : 401,
         body: {
           success: false,
-          message: 'Usuario no autenticado',
+          message: authResult.error || 'Usuario no autenticado',
           timestamp: new Date().toISOString(),
         },
       };
       return;
     }
 
+    const { userId } = authResult.user!;
+
     switch (method) {
       case 'GET':
-        if (action === 'stats') {
+        if (action === 'reports') {
+          // Manejar reportes
+          if (subaction === 'daily') {
+            await handleDailySalesReport(context, req);
+          } else if (subaction === 'by-client') {
+            await handleSalesByClientReport(context, req);
+          } else if (subaction === 'top-products') {
+            await handleTopProductsReport(context, req);
+          } else if (subaction === 'summary') {
+            await handleDashboardSummaryReport(context, req);
+          } else {
+            context.res = {
+              status: 400,
+              body: {
+                success: false,
+                message: 'Tipo de reporte no válido. Tipos disponibles: daily, by-client, top-products, summary',
+                timestamp: new Date().toISOString(),
+              },
+            };
+          }
+        } else if (action === 'stats') {
           await handleGetSalesStats(context, req);
         } else if (action === 'overdue') {
           await handleGetOverdueSales(context, req);
@@ -47,7 +95,7 @@ const salesHandler: AzureFunction = async (context: Context, req: HttpRequest): 
         if (action === 'client') {
           await handleCreateClient(context, req);
         } else {
-          await handleCreateSale(context, req);
+          await handleCreateSale(context, req, userId);
         }
         break;
       case 'PUT':
@@ -98,7 +146,37 @@ async function handleListSales(context: Context, req: HttpRequest): Promise<void
     const idclient = req.query.idclient as string;
     const payment_status = req.query.payment_status as string;
 
-    let query = db.getConnection()
+    // Query base sin selects para construir filtros
+    let baseQuery = db.getConnection()
+      .from('nubestock.tb_ope_sales as s')
+      .leftJoin('nubestock.tb_mae_client as c', 's.idclient', 'c.idclient')
+      .leftJoin('nubestock.tb_mae_user as u', 's.iduser', 'u.iduser')
+      .where('s.isactive', true);
+
+    // Aplicar filtros
+    if (startDate) {
+      baseQuery = baseQuery.where('s.sale_date', '>=', startDate);
+    }
+
+    if (endDate) {
+      baseQuery = baseQuery.where('s.sale_date', '<=', endDate);
+    }
+
+    if (idclient) {
+      baseQuery = baseQuery.where('s.idclient', idclient);
+    }
+
+    if (payment_status) {
+      baseQuery = baseQuery.where('s.payment_status', payment_status);
+    }
+
+    // Contar total (query separada para count)
+    const totalQuery = baseQuery.clone().count('s.idsale as count').first();
+    const countResult = await totalQuery;
+    const total = parseInt(countResult?.count as string || '0');
+
+    // Query para obtener los datos con paginación
+    const sales = await baseQuery
       .select(
         's.*',
         'c.client_name',
@@ -106,37 +184,9 @@ async function handleListSales(context: Context, req: HttpRequest): Promise<void
         'c.ruc_cedula',
         'u.nameuser'
       )
-      .from('nubestock.tb_ope_sales as s')
-      .leftJoin('nubestock.tb_mae_client as c', 's.idclient', 'c.idclient')
-      .leftJoin('nubestock.tb_mae_user as u', 's.iduser', 'u.iduser')
-      .where('s.isactive', true)
-      .orderBy('s.sale_date', 'desc');
-
-    // Aplicar filtros
-    if (startDate) {
-      query = query.where('s.sale_date', '>=', startDate);
-    }
-
-    if (endDate) {
-      query = query.where('s.sale_date', '<=', endDate);
-    }
-
-    if (idclient) {
-      query = query.where('s.idclient', idclient);
-    }
-
-    if (payment_status) {
-      query = query.where('s.payment_status', payment_status);
-    }
-
-    // Contar total
-    const totalQuery = query.clone();
-    const [{ count }] = await totalQuery.count('* as count');
-    const total = parseInt(count as string);
-
-    // Aplicar paginación
-    const offset = (page - 1) * limit;
-    const sales = await query.offset(offset).limit(limit);
+      .orderBy('s.sale_date', 'desc')
+      .offset((page - 1) * limit)
+      .limit(limit);
 
     context.res = {
       status: 200,
@@ -234,14 +284,15 @@ async function handleGetSale(context: Context, req: HttpRequest, saleId: string)
   }
 }
 
-async function handleCreateSale(context: Context, req: HttpRequest): Promise<void> {
+async function handleCreateSale(context: Context, req: HttpRequest, userId: string): Promise<void> {
   try {
     const saleSchema = Joi.object({
       idclient: Joi.string().uuid().required(),
-      iduser: Joi.string().uuid().optional(),
+      iduser: Joi.string().uuid().optional(), // Opcional: si no se proporciona, se usa el del token
       sale_date: Joi.date().iso().required(),
       total_amount: Joi.number().positive().required(),
       payment_status: Joi.string().valid('pending', 'paid', 'overdue', 'cancelled').default('pending'),
+      payment_method: Joi.string().valid('cash', 'card', 'credit', 'transfer', 'check', 'other').optional(),
       payment_due_date: Joi.date().iso().optional(),
       dispatch_guide: Joi.string().max(100).optional(),
       notes: Joi.string().max(500).optional(),
@@ -322,10 +373,11 @@ async function handleCreateSale(context: Context, req: HttpRequest): Promise<voi
       const [sale] = await trx('nubestock.tb_ope_sales')
         .insert({
           idclient: value.idclient,
-          iduser: value.iduser,
+          iduser: value.iduser || userId, // Usar el userId del token si no se proporciona
           sale_date: value.sale_date,
           total_amount: value.total_amount,
           payment_status: value.payment_status,
+          ...(value.payment_method && { payment_method: value.payment_method }), // Solo incluir si está presente
           payment_due_date: value.payment_due_date,
           dispatch_guide: value.dispatch_guide,
           notes: value.notes,
@@ -357,7 +409,7 @@ async function handleCreateSale(context: Context, req: HttpRequest): Promise<voi
         // Crear transacción de inventario (salida de productos)
         await trx('nubestock.tb_ope_transaction')
           .insert({
-            iduser: value.iduser,
+            iduser: value.iduser || userId, // Usar el userId del token si no se proporciona
             idfinal_product: detail.idfinal_product,
             transaction_type: 'sale',
             quantity: -detail.quantity, // Negativo porque es salida
@@ -543,65 +595,86 @@ async function handleCreateClient(context: Context, req: HttpRequest): Promise<v
 
 async function handleGetSalesStats(context: Context, req: HttpRequest): Promise<void> {
   try {
+    const startTime = Date.now();
     const startDate = req.query.startDate as string || new Date().toISOString().split('T')[0];
     const endDate = req.query.endDate as string || new Date().toISOString().split('T')[0];
 
-    // Estadísticas generales
-    const generalStats = await db.getConnection()
-      .select(
-        db.getConnection().raw('SUM(total_amount) as total_sales'),
-        db.getConnection().raw('COUNT(*) as total_sales_count'),
-        db.getConnection().raw('AVG(total_amount) as average_sale'),
-        db.getConnection().raw('COUNT(DISTINCT idclient) as unique_clients')
-      )
+    // Crear base query para reutilizar filtros
+    const baseQuery = db.getConnection()
       .from('nubestock.tb_ope_sales')
       .where('sale_date', '>=', startDate)
       .where('sale_date', '<=', endDate)
-      .where('isactive', true)
-      .first();
+      .where('isactive', true);
 
-    // Estadísticas por estado de pago
-    const paymentStats = await db.getConnection()
-      .select(
-        'payment_status',
-        db.getConnection().raw('COUNT(*) as count'),
-        db.getConnection().raw('SUM(total_amount) as total_amount')
-      )
-      .from('nubestock.tb_ope_sales')
-      .where('sale_date', '>=', startDate)
-      .where('sale_date', '<=', endDate)
-      .where('isactive', true)
-      .groupBy('payment_status');
+    // Ejecutar todas las queries en paralelo para mejorar el rendimiento
+    const [generalStats, paymentStats, topClients] = await Promise.all([
+      // Estadísticas generales (optimizado: una sola query con todas las métricas)
+      baseQuery.clone()
+        .select(
+          db.getConnection().raw('COALESCE(SUM(total_amount), 0) as total_sales'),
+          db.getConnection().raw('COUNT(*)::int as total_sales_count'),
+          db.getConnection().raw('COALESCE(AVG(total_amount), 0) as average_sale'),
+          db.getConnection().raw('COUNT(DISTINCT idclient)::int as unique_clients')
+        )
+        .first(),
 
-    // Top clientes
-    const topClients = await db.getConnection()
-      .select(
-        'c.client_name',
-        'c.business_name',
-        db.getConnection().raw('SUM(s.total_amount) as total_purchased'),
-        db.getConnection().raw('COUNT(s.idsale) as sales_count')
-      )
-      .from('nubestock.tb_ope_sales as s')
-      .leftJoin('nubestock.tb_mae_client as c', 's.idclient', 'c.idclient')
-      .where('s.sale_date', '>=', startDate)
-      .where('s.sale_date', '<=', endDate)
-      .where('s.isactive', true)
-      .groupBy('c.idclient', 'c.client_name', 'c.business_name')
-      .orderBy('total_purchased', 'desc')
-      .limit(10);
+      // Estadísticas por estado de pago
+      baseQuery.clone()
+        .select(
+          'payment_status',
+          db.getConnection().raw('COUNT(*)::int as count'),
+          db.getConnection().raw('COALESCE(SUM(total_amount), 0) as total_amount')
+        )
+        .groupBy('payment_status'),
+
+      // Top clientes (optimizado: usar INNER JOIN en lugar de LEFT JOIN)
+      db.getConnection()
+        .select(
+          'c.client_name',
+          'c.business_name',
+          db.getConnection().raw('SUM(s.total_amount) as total_purchased'),
+          db.getConnection().raw('COUNT(s.idsale)::int as sales_count')
+        )
+        .from('nubestock.tb_ope_sales as s')
+        .innerJoin('nubestock.tb_mae_client as c', 's.idclient', 'c.idclient')
+        .where('s.sale_date', '>=', startDate)
+        .where('s.sale_date', '<=', endDate)
+        .where('s.isactive', true)
+        .where('c.isactive', true) // Agregar filtro de clientes activos
+        .groupBy('c.idclient', 'c.client_name', 'c.business_name')
+        .orderBy('total_purchased', 'desc')
+        .limit(10)
+    ]);
+
+    const executionTime = Date.now() - startTime;
 
     context.res = {
       status: 200,
       body: {
         success: true,
         data: {
-          general: generalStats,
-          byPaymentStatus: paymentStats,
-          topClients,
+          general: {
+            total_sales: parseFloat(generalStats?.total_sales || 0),
+            total_sales_count: parseInt(generalStats?.total_sales_count || 0),
+            average_sale: parseFloat(generalStats?.average_sale || 0),
+            unique_clients: parseInt(generalStats?.unique_clients || 0),
+          },
+          byPaymentStatus: paymentStats.map((stat: any) => ({
+            payment_status: stat.payment_status,
+            count: parseInt(stat.count || 0),
+            total_amount: parseFloat(stat.total_amount || 0),
+          })),
+          topClients: topClients.map((client: any) => ({
+            client_name: client.client_name,
+            business_name: client.business_name,
+            total_purchased: parseFloat(client.total_purchased || 0),
+            sales_count: parseInt(client.sales_count || 0),
+          })),
           dateRange: {
             start: startDate,
             end: endDate,
           },
+          executionTime: `${executionTime}ms`,
         },
         timestamp: new Date().toISOString(),
       },
@@ -663,6 +736,7 @@ async function handleUpdateSale(context: Context, req: HttpRequest, saleId: stri
       sale_date: Joi.date().iso().optional(),
       total_amount: Joi.number().positive().optional(),
       payment_status: Joi.string().valid('pending', 'paid', 'overdue', 'cancelled').optional(),
+      payment_method: Joi.string().valid('cash', 'card', 'credit', 'transfer', 'check', 'other').optional(),
       payment_due_date: Joi.date().iso().optional(),
       dispatch_guide: Joi.string().max(100).optional(),
       notes: Joi.string().max(500).optional(),

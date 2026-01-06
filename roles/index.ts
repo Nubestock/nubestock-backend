@@ -1,7 +1,7 @@
 import { AzureFunction, Context, HttpRequest } from '../src/types/azure-functions';
 import { Database } from '../src/config/database';
 import { logger } from '../src/config/logger';
-import { requireAuth } from '../src/middleware/authMiddleware';
+import { requireAuth, requireAdmin, requireAnyPermission } from '../src/middleware/authMiddleware';
 
 const db = Database.getInstance();
 
@@ -16,11 +16,27 @@ const rolesHandler: AzureFunction = async (context: Context, req: HttpRequest): 
       url: req.url,
     });
 
-    // Verificar autenticación
-    const authResult = requireAuth(req);
+    // Verificar autenticación y permisos (roles requiere permisos de administrador)
+    let authResult: { success: boolean; user?: any; error?: string };
+    
+    switch (method) {
+      case 'GET':
+        // GET requiere permiso de lectura de roles (admin o users_manage)
+        authResult = requireAnyPermission(req, ['roles_read', 'users_manage', 'admin']);
+        break;
+      case 'POST':
+      case 'PUT':
+      case 'DELETE':
+        // POST/PUT/DELETE requiere permisos de administrador
+        authResult = requireAnyPermission(req, ['roles_write', 'users_manage', 'admin']);
+        break;
+      default:
+        authResult = requireAuth(req);
+    }
+
     if (!authResult.success) {
       context.res = {
-        status: 401,
+        status: authResult.error?.includes('permisos') ? 403 : 401,
         body: {
           success: false,
           message: authResult.error || 'Usuario no autenticado',
@@ -34,6 +50,8 @@ const rolesHandler: AzureFunction = async (context: Context, req: HttpRequest): 
       case 'GET':
         if (action === 'permissions') {
           await handleGetPermissions(context, req);
+        } else if (action === 'all') {
+          await handleGetAllRolesWithPermissions(context, req);
         } else if (action) {
           await handleGetRole(context, req, action);
         } else {
@@ -117,6 +135,68 @@ async function handleListRoles(context: Context, req: HttpRequest): Promise<void
       body: {
         success: false,
         message: 'Error al listar roles',
+        timestamp: new Date().toISOString(),
+      },
+    };
+  }
+}
+
+async function handleGetAllRolesWithPermissions(context: Context, req: HttpRequest): Promise<void> {
+  try {
+    // Obtener todos los roles activos
+    const roles = await db.getConnection()
+      .select('*')
+      .from('nubestock.tb_mae_role')
+      .where('isactive', true)
+      .orderBy('namerole');
+
+    // Para cada rol, obtener sus permisos
+    const rolesWithPermissions = await Promise.all(
+      roles.map(async (role: any) => {
+        const permissions = await db.getConnection()
+          .select('p.*')
+          .from('nubestock.tb_mae_role_permission as rp')
+          .join('nubestock.tb_mae_permission as p', 'rp.idpermission', 'p.idpermission')
+          .where('rp.idrole', role.idrole)
+          .where('rp.isactive', true)
+          .where('p.isactive', true)
+          .orderBy('p.namepermission');
+
+        return {
+          ...role,
+          permissions: permissions || [],
+          permissionsCount: permissions?.length || 0,
+        };
+      })
+    );
+
+    // También obtener todos los permisos disponibles para referencia
+    const allPermissions = await db.getConnection()
+      .select('*')
+      .from('nubestock.tb_mae_permission')
+      .where('isactive', true)
+      .orderBy('namepermission');
+
+    context.res = {
+      status: 200,
+      body: {
+        success: true,
+        data: {
+          roles: rolesWithPermissions,
+          totalRoles: rolesWithPermissions.length,
+          allPermissions: allPermissions,
+          totalPermissions: allPermissions.length,
+        },
+        timestamp: new Date().toISOString(),
+      },
+    };
+  } catch (error) {
+    logger.error('Error al obtener roles con permisos:', error);
+    context.res = {
+      status: 500,
+      body: {
+        success: false,
+        message: 'Error al obtener roles con permisos',
         timestamp: new Date().toISOString(),
       },
     };

@@ -1,5 +1,6 @@
 import knex, { Knex } from 'knex';
 import { config } from './environment';
+import './loadEnv'; // Cargar variables de entorno al inicio
 
 const extractTableName = (table: string): string => {
   if (!table) return table;
@@ -24,8 +25,12 @@ const getIdColumnForTable = (table: string): string => {
       return 'idavailability';
     case 'tb_ope_transaction':
       return 'idtransaction';
+    case 'tb_ope_daily_production':
+      return 'iddaily_production';
     case 'tb_mae_final_product':
       return 'idfinal_product';
+    case 'tb_mae_device_token':
+      return 'iddevice_token';
     case 'tb_mae_alert':
       return 'idalert';
     case 'tb_mae_client':
@@ -58,7 +63,11 @@ export class Database {
         user: config.database.user,
         password: config.database.password,
         database: config.database.name,
-        ssl: config.database.ssl ? { rejectUnauthorized: false } : false,
+        ssl: config.database.ssl 
+          ? { 
+              rejectUnauthorized: false // Azure Database for PostgreSQL requiere esto
+            } 
+          : false,
       },
       pool: {
         min: 2,

@@ -190,7 +190,7 @@ export const optionalAuth = async (
         }
       } catch (error) {
         // Token inválido, continuar sin autenticación
-        logger.debug('Token inválido en autenticación opcional:', error);
+        // No loguear en producción para evitar exposición de información
       }
     }
 

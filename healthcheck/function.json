@@ -1,12 +1,12 @@
 {
   "bindings": [
     {
-      "authLevel": "function",
+      "authLevel": "anonymous",
       "type": "httpTrigger",
       "direction": "in",
       "name": "req",
-      "methods": ["get", "post", "put"],
-      "route": "sales/{action?}/{subaction?}"
+      "methods": ["get"],
+      "route": "healthcheck"
     },
     {
       "type": "http",
@@ -14,5 +14,6 @@
       "name": "res"
     }
   ],
-  "scriptFile": "../dist/sales/index.js"
+  "scriptFile": "../dist/healthcheck/index.js"
 }
+

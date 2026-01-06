@@ -2,6 +2,7 @@ import { AzureFunction, Context, HttpRequest } from '../src/types/azure-function
 import { Database } from '../src/config/database';
 import { logger } from '../src/config/logger';
 import { requireAuth } from '../src/middleware/authMiddleware';
+import Joi from 'joi';
 
 const db = Database.getInstance();
 
@@ -182,19 +183,47 @@ async function handleCheckPermission(context: Context, req: HttpRequest): Promis
 
 async function handleAssignRole(context: Context, req: HttpRequest): Promise<void> {
   try {
-    const { userId, roleId } = req.body;
-
-    if (!userId || !roleId) {
+    // Obtener el usuario que está asignando el rol (del token JWT)
+    const authResult = requireAuth(req);
+    if (!authResult.success) {
       context.res = {
-        status: 400,
+        status: 401,
         body: {
           success: false,
-          message: 'userId y roleId son requeridos',
+          message: authResult.error || 'Usuario no autenticado',
           timestamp: new Date().toISOString(),
         },
       };
       return;
     }
+    const assignedBy = authResult.user!.userId;
+
+    // Validar el body
+    const assignRoleSchema = Joi.object({
+      userId: Joi.string().uuid().required(),
+      roleId: Joi.string().uuid().required(),
+      assignment_reason: Joi.string().min(3).max(500).required(),
+    });
+
+    const { error, value } = assignRoleSchema.validate(req.body);
+    
+    if (error) {
+      context.res = {
+        status: 400,
+        body: {
+          success: false,
+          message: 'Datos de entrada inválidos',
+          errors: error.details.map(detail => ({
+            field: detail.path.join('.'),
+            message: detail.message,
+          })),
+          timestamp: new Date().toISOString(),
+        },
+      };
+      return;
+    }
+
+    const { userId, roleId, assignment_reason } = value;
 
     // Verificar si el usuario existe
     const user = await db.findById('nubestock.tb_mae_user', userId);
@@ -226,7 +255,7 @@ async function handleAssignRole(context: Context, req: HttpRequest): Promise<voi
 
     // Verificar si ya tiene el rol asignado
     const existingAssignment = await db.getConnection()
-      .select('iduser_role')
+      .select('iduserrole')
       .from('nubestock.tb_mae_user_role')
       .where('iduser', userId)
       .where('idrole', roleId)
@@ -248,6 +277,8 @@ async function handleAssignRole(context: Context, req: HttpRequest): Promise<voi
     const newAssignment = await db.create('nubestock.tb_mae_user_role', {
       iduser: userId,
       idrole: roleId,
+      assigned_by: assignedBy,
+      assignment_reason: assignment_reason,
       isactive: true,
     });
 

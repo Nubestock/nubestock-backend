@@ -2,6 +2,7 @@ import { AzureFunction, Context, HttpRequest } from '../src/types/azure-function
 import { AuthService } from '../src/services/authService';
 import { logger } from '../src/config/logger';
 import { validateRequest, commonSchemas } from '../src/middleware/validation';
+import { requireAuth, requireAdmin } from '../src/middleware/authMiddleware';
 import Joi from 'joi';
 
 const authService = new AuthService();
@@ -34,6 +35,9 @@ const authHandler: AzureFunction = async (context: Context, req: HttpRequest): P
         break;
       case 'reset-password':
         await handleResetPassword(context, req);
+        break;
+      case 'admin-reset-password':
+        await handleAdminResetPassword(context, req);
         break;
       default:
         context.res = {
@@ -196,19 +200,21 @@ async function handleRefresh(context: Context, req: HttpRequest): Promise<void> 
 
 async function handleLogout(context: Context, req: HttpRequest): Promise<void> {
   try {
-    const userId = req.headers['x-user-id'] as string;
-    
-    if (!userId) {
+    // Verificar autenticación usando el middleware
+    const authResult = requireAuth(req);
+    if (!authResult.success) {
       context.res = {
         status: 401,
         body: {
           success: false,
-          message: 'Usuario no autenticado',
+          message: authResult.error || 'Usuario no autenticado',
           timestamp: new Date().toISOString(),
         },
       };
       return;
     }
+
+    const { userId } = authResult.user!;
 
     await authService.logout(userId);
     
@@ -235,19 +241,21 @@ async function handleLogout(context: Context, req: HttpRequest): Promise<void> {
 
 async function handleChangePassword(context: Context, req: HttpRequest): Promise<void> {
   try {
-    const userId = req.headers['x-user-id'] as string;
-    
-    if (!userId) {
+    // Verificar autenticación usando el middleware
+    const authResult = requireAuth(req);
+    if (!authResult.success) {
       context.res = {
         status: 401,
         body: {
           success: false,
-          message: 'Usuario no autenticado',
+          message: authResult.error || 'Usuario no autenticado',
           timestamp: new Date().toISOString(),
         },
       };
       return;
     }
+
+    const { userId } = authResult.user!;
 
     const changePasswordSchema = Joi.object({
       currentPassword: Joi.string().required(),
@@ -297,37 +305,202 @@ async function handleChangePassword(context: Context, req: HttpRequest): Promise
 
 async function handleResetPassword(context: Context, req: HttpRequest): Promise<void> {
   try {
-    const { email } = req.body;
+    const method = req.method;
+
+    if (method === 'POST') {
+      // Solicitar reset de contraseña (generar token y enviar email)
+      const { email } = req.body;
+      
+      if (!email) {
+        context.res = {
+          status: 400,
+          body: {
+            success: false,
+            message: 'Email requerido',
+            timestamp: new Date().toISOString(),
+          },
+        };
+        return;
+      }
+
+      await authService.requestPasswordReset(email);
+      
+      context.res = {
+        status: 200,
+        body: {
+          success: true,
+          message: 'Si el email existe, se enviará un enlace de restablecimiento',
+          timestamp: new Date().toISOString(),
+        },
+      };
+    } else if (method === 'PUT') {
+      // Restablecer contraseña con token
+      const resetPasswordSchema = Joi.object({
+        token: Joi.string().required(),
+        newPassword: Joi.string().min(8).max(100).required(),
+      });
+
+      const { error, value } = resetPasswordSchema.validate(req.body);
+      
+      if (error) {
+        context.res = {
+          status: 400,
+          body: {
+            success: false,
+            message: 'Datos de entrada inválidos',
+            errors: error.details.map(detail => ({
+              field: detail.path.join('.'),
+              message: detail.message,
+            })),
+            timestamp: new Date().toISOString(),
+          },
+        };
+        return;
+      }
+
+      const { token, newPassword } = value;
+
+      await authService.resetPassword(token, newPassword);
+      
+      context.res = {
+        status: 200,
+        body: {
+          success: true,
+          message: 'Contraseña restablecida exitosamente',
+          timestamp: new Date().toISOString(),
+        },
+      };
+    } else {
+      context.res = {
+        status: 405,
+        body: {
+          success: false,
+          message: 'Método no permitido. Use POST para solicitar reset o PUT para restablecer contraseña',
+          timestamp: new Date().toISOString(),
+        },
+      };
+    }
+  } catch (error: any) {
+    logger.error('Error en reset de contraseña:', error);
     
-    if (!email) {
+    // Manejar errores específicos
+    if (error.message === 'Token de restablecimiento inválido o ya utilizado') {
       context.res = {
         status: 400,
         body: {
           success: false,
-          message: 'Email requerido',
+          message: 'Token de restablecimiento inválido o ya utilizado',
           timestamp: new Date().toISOString(),
         },
       };
       return;
     }
 
-    await authService.requestPasswordReset(email);
+    if (error.message === 'Token de restablecimiento expirado') {
+      context.res = {
+        status: 400,
+        body: {
+          success: false,
+          message: 'Token de restablecimiento expirado. Por favor, solicite un nuevo restablecimiento',
+          timestamp: new Date().toISOString(),
+        },
+      };
+      return;
+    }
+
+    if (error.message === 'La contraseña debe tener al menos 8 caracteres') {
+      context.res = {
+        status: 400,
+        body: {
+          success: false,
+          message: error.message,
+          timestamp: new Date().toISOString(),
+        },
+      };
+      return;
+    }
+
+    context.res = {
+      status: error.message && error.message.includes('Token') ? 400 : 500,
+      body: {
+        success: false,
+        message: error.message || 'Error al procesar restablecimiento de contraseña',
+        timestamp: new Date().toISOString(),
+      },
+    };
+  }
+}
+
+async function handleAdminResetPassword(context: Context, req: HttpRequest): Promise<void> {
+  try {
+    // Verificar que el usuario autenticado sea administrador
+    const authResult = requireAdmin(req);
+    if (!authResult.success) {
+      context.res = {
+        status: 403,
+        body: {
+          success: false,
+          message: authResult.error || 'Se requieren permisos de administrador',
+          timestamp: new Date().toISOString(),
+        },
+      };
+      return;
+    }
+
+    const adminUser = authResult.user!;
+
+    // Validar datos de entrada
+    const resetPasswordSchema = Joi.object({
+      email: Joi.string().email().required(),
+    });
+
+    const { error, value } = resetPasswordSchema.validate(req.body);
+    
+    if (error) {
+      context.res = {
+        status: 400,
+        body: {
+          success: false,
+          message: 'Datos de entrada inválidos',
+          errors: error.details.map(detail => ({
+            field: detail.path.join('.'),
+            message: detail.message,
+          })),
+          timestamp: new Date().toISOString(),
+        },
+      };
+      return;
+    }
+
+    const { email } = value;
+
+    // Solicitar reset de contraseña como administrador
+    const userInfo = await authService.requestPasswordResetByAdmin(email, adminUser.userId);
     
     context.res = {
       status: 200,
       body: {
         success: true,
-        message: 'Si el email existe, se enviará un enlace de restablecimiento',
+        message: 'Solicitud de restablecimiento de contraseña generada exitosamente',
+        data: {
+          userId: userInfo.userId,
+          email: userInfo.email,
+          nameuser: userInfo.nameuser,
+        },
+        requestedBy: {
+          userId: adminUser.userId,
+          email: adminUser.userEmail,
+        },
         timestamp: new Date().toISOString(),
       },
     };
   } catch (error) {
-    logger.error('Error al solicitar reset de contraseña:', error);
+    logger.error('Error al solicitar reset de contraseña como administrador:', error);
     context.res = {
-      status: 500,
+      status: error instanceof Error && error.message === 'Usuario no encontrado o inactivo' ? 404 : 500,
       body: {
         success: false,
-        message: 'Error al solicitar reset de contraseña',
+        message: error instanceof Error ? error.message : 'Error al solicitar reset de contraseña',
         timestamp: new Date().toISOString(),
       },
     };

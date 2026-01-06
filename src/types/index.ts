@@ -131,6 +131,7 @@ export interface Sale extends BaseEntity {
   sale_date: Date;
   total_amount: number;
   payment_status: 'pending' | 'paid' | 'overdue' | 'cancelled';
+  payment_method?: 'cash' | 'card' | 'credit' | 'transfer' | 'check' | 'other';
   payment_due_date?: Date;
   dispatch_guide?: string;
   notes?: string;
