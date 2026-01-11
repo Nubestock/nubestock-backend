@@ -1,5 +1,6 @@
 import knex, { Knex } from 'knex';
 import { config } from './environment';
+import { logger } from './logger';
 import './loadEnv'; // Cargar variables de entorno al inicio
 
 const extractTableName = (table: string): string => {
@@ -45,6 +46,14 @@ const getIdColumnForTable = (table: string): string => {
       return 'idsale';
     case 'tb_ope_sales_detail':
       return 'idsales_detail';
+    case 'tb_mae_product_recipe':
+      return 'idrecipe';
+    case 'tb_mae_material':
+      return 'idmaterial';
+    case 'tb_mae_category':
+      return 'idcategory';
+    case 'tb_mae_origin':
+      return 'idorigin';
     default:
       return 'id';
   }
@@ -55,7 +64,11 @@ export class Database {
   private connection: Knex;
 
   private constructor() {
-    this.connection = knex({
+    this.connection = this.createConnection();
+  }
+
+  private createConnection(): Knex {
+    return knex({
       client: 'pg',
       connection: {
         host: config.database.host,
@@ -72,13 +85,16 @@ export class Database {
       pool: {
         min: 2,
         max: 10,
-        acquireTimeoutMillis: 30000,
+        acquireTimeoutMillis: 60000, // Aumentado a 60 segundos
         createTimeoutMillis: 30000,
         destroyTimeoutMillis: 5000,
-        idleTimeoutMillis: 30000,
-        reapIntervalMillis: 1000,
+        idleTimeoutMillis: 600000, // Aumentado a 10 minutos para evitar cierres prematuros de Azure
+        reapIntervalMillis: 10000, // Verificar conexiones idle cada 10 segundos
         createRetryIntervalMillis: 200,
       },
+      // Agregar manejo de errores a nivel de pool
+      asyncStackTraces: true,
+      debug: config.server.environment === 'development',
       migrations: {
         directory: './src/migrations',
         tableName: 'knex_migrations',

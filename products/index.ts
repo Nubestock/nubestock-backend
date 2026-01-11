@@ -140,7 +140,13 @@ const productsHandler: AzureFunction = async (context: Context, req: HttpRequest
         if (action === 'material') {
           await handleUpdateMaterial(context, req);
         } else if (action === 'recipe') {
-          await handleUpdateRecipe(context, req);
+          // Si hay subaction 'update-product', actualizar receta completa del producto
+          if (subaction === 'update-product') {
+            await handleUpdateProductRecipe(context, req);
+          } else {
+            // Si hay id en query params, actualizar receta individual
+            await handleUpdateRecipe(context, req);
+          }
         } else if (action) {
           await handleUpdateProduct(context, req, action);
         } else {
@@ -1031,7 +1037,7 @@ async function handleUpdateProduct(context: Context, req: HttpRequest, productId
       }
     }
 
-    const updatedProduct = await db.update('tb_mae_final_product', productId, {
+    const updatedProduct = await db.update('nubestock.tb_mae_final_product', productId, {
       ...value,
       modificationdate: new Date(),
     });
@@ -2162,7 +2168,7 @@ async function handleUpdateMaterial(context: Context, req: HttpRequest): Promise
       }
     }
 
-    const updatedMaterial = await db.update('tb_mae_material', materialId, {
+    const updatedMaterial = await db.update('nubestock.tb_mae_material', materialId, {
       ...value,
       modificationdate: new Date(),
     });
@@ -2225,7 +2231,7 @@ async function handleDeleteMaterial(context: Context, req: HttpRequest): Promise
     }
 
     // Soft delete: desactivar en lugar de eliminar
-    await db.update('tb_mae_material', materialId, {
+    await db.update('nubestock.tb_mae_material', materialId, {
       isactive: false,
       modificationdate: new Date(),
     });
@@ -2309,7 +2315,7 @@ async function handleUpdateRecipe(context: Context, req: HttpRequest): Promise<v
       return;
     }
 
-    const updatedRecipe = await db.update('tb_mae_product_recipe', recipeId, {
+    const updatedRecipe = await db.update('nubestock.tb_mae_product_recipe', recipeId, {
       ...value,
       modificationdate: new Date(),
     });
@@ -2330,6 +2336,265 @@ async function handleUpdateRecipe(context: Context, req: HttpRequest): Promise<v
       body: {
         success: false,
         message: 'Error al actualizar receta',
+        timestamp: new Date().toISOString(),
+      },
+    };
+  }
+}
+
+async function handleUpdateProductRecipe(context: Context, req: HttpRequest): Promise<void> {
+  try {
+    // Esquema para validar la estructura: receta completa del producto
+    const recipeSchema = Joi.object({
+      idfinal_product: Joi.string().uuid().required(),
+      materials: Joi.array().items(
+        Joi.object({
+          idmaterial: Joi.string().uuid().required(),
+          quantity: Joi.number().positive().required(),
+        })
+      ).min(0).required(), // Permitir array vacío para quitar todos los materiales
+    });
+
+    const { error, value } = recipeSchema.validate(req.body);
+    
+    if (error) {
+      context.res = {
+        status: 400,
+        body: {
+          success: false,
+          message: 'Datos de entrada inválidos',
+          errors: error.details.map(detail => ({
+            field: detail.path.join('.'),
+            message: detail.message,
+          })),
+          timestamp: new Date().toISOString(),
+        },
+      };
+      return;
+    }
+
+    const { idfinal_product, materials } = value;
+
+    // Verificar que el producto existe
+    const product = await db.getConnection()
+      .select('idfinal_product')
+      .from('nubestock.tb_mae_final_product')
+      .where('idfinal_product', idfinal_product)
+      .where('isactive', true)
+      .first();
+
+    if (!product) {
+      context.res = {
+        status: 404,
+        body: {
+          success: false,
+          message: 'Producto no encontrado',
+          timestamp: new Date().toISOString(),
+        },
+      };
+      return;
+    }
+
+    // Obtener materiales actuales de la receta
+    const existingRecipes = await db.getConnection()
+      .select('idrecipe', 'idmaterial', 'quantity', 'isactive')
+      .from('nubestock.tb_mae_product_recipe')
+      .where('idfinal_product', idfinal_product)
+      .where('isactive', true);
+
+    const existingMaterialMap = new Map(
+      existingRecipes.map((r: any) => [r.idmaterial, r])
+    );
+
+    // Verificar que todos los materiales nuevos existen
+    const materialIds = materials.map((m: any) => m.idmaterial);
+    if (materialIds.length > 0) {
+      const existingMaterials = await db.getConnection()
+        .select('idmaterial')
+        .from('nubestock.tb_mae_material')
+        .whereIn('idmaterial', materialIds)
+        .where('isactive', true);
+
+      if (existingMaterials.length !== materialIds.length) {
+        const foundIds = existingMaterials.map((m: any) => m.idmaterial);
+        const missingIds = materialIds.filter((id: string) => !foundIds.includes(id));
+        
+        context.res = {
+          status: 400,
+          body: {
+            success: false,
+            message: 'Algunos materiales no existen o están inactivos',
+            missingMaterials: missingIds,
+            timestamp: new Date().toISOString(),
+          },
+        };
+        return;
+      }
+    }
+
+    const now = new Date();
+    const results = {
+      added: [] as any[],
+      updated: [] as any[],
+      removed: [] as any[],
+      errors: [] as any[],
+    };
+
+    // Procesar en transacción
+    await db.transaction(async (trx) => {
+      const materialsToProcess = new Set(materialIds);
+      
+      // 1. Agregar materiales nuevos y actualizar existentes
+      for (const material of materials) {
+        const existingRecipe = existingMaterialMap.get(material.idmaterial);
+        
+        if (existingRecipe) {
+          // Material existe: actualizar si la cantidad cambió
+          if (parseFloat(existingRecipe.quantity) !== material.quantity) {
+            try {
+              const updated = await trx('nubestock.tb_mae_product_recipe')
+                .where('idrecipe', existingRecipe.idrecipe)
+                .update({
+                  quantity: material.quantity,
+                  modificationdate: now,
+                })
+                .returning('*');
+              
+              if (updated && updated.length > 0) {
+                results.updated.push({
+                  idrecipe: updated[0].idrecipe,
+                  idmaterial: material.idmaterial,
+                  oldQuantity: parseFloat(existingRecipe.quantity),
+                  newQuantity: material.quantity,
+                });
+              }
+            } catch (error) {
+              logger.error(`Error al actualizar material ${material.idmaterial}:`, error);
+              results.errors.push({
+                idmaterial: material.idmaterial,
+                operation: 'update',
+                error: error instanceof Error ? error.message : 'Error desconocido',
+              });
+            }
+          }
+        } else {
+          // Material nuevo: agregar
+          try {
+            const newRecipe = await trx('nubestock.tb_mae_product_recipe')
+              .insert({
+                idfinal_product,
+                idmaterial: material.idmaterial,
+                quantity: material.quantity,
+                isactive: true,
+                creationdate: now,
+                modificationdate: now,
+              })
+              .returning('*');
+            
+            if (newRecipe && newRecipe.length > 0) {
+              results.added.push({
+                idrecipe: newRecipe[0].idrecipe,
+                idmaterial: material.idmaterial,
+                quantity: material.quantity,
+              });
+            }
+          } catch (error) {
+            logger.error(`Error al agregar material ${material.idmaterial}:`, error);
+            results.errors.push({
+              idmaterial: material.idmaterial,
+              operation: 'add',
+              error: error instanceof Error ? error.message : 'Error desconocido',
+            });
+          }
+        }
+      }
+
+      // 2. Quitar materiales que ya no están en la lista (soft delete)
+      for (const existingRecipe of existingRecipes) {
+        if (!materialsToProcess.has(existingRecipe.idmaterial)) {
+          try {
+            const removed = await trx('nubestock.tb_mae_product_recipe')
+              .where('idrecipe', existingRecipe.idrecipe)
+              .update({
+                isactive: false,
+                modificationdate: now,
+              })
+              .returning('*');
+            
+            if (removed && removed.length > 0) {
+              results.removed.push({
+                idrecipe: existingRecipe.idrecipe,
+                idmaterial: existingRecipe.idmaterial,
+                quantity: parseFloat(existingRecipe.quantity),
+              });
+            }
+          } catch (error) {
+            logger.error(`Error al quitar material ${existingRecipe.idmaterial}:`, error);
+            results.errors.push({
+              idmaterial: existingRecipe.idmaterial,
+              operation: 'remove',
+              error: error instanceof Error ? error.message : 'Error desconocido',
+            });
+          }
+        }
+      }
+    });
+
+    // Obtener la receta actualizada completa
+    const updatedRecipes = await db.getConnection()
+      .select(
+        'pr.idrecipe',
+        'pr.idfinal_product',
+        'pr.idmaterial',
+        'pr.quantity',
+        'pr.isactive',
+        'm.material_name',
+        'm.material_code',
+        'm.material_type'
+      )
+      .from('nubestock.tb_mae_product_recipe as pr')
+      .join('nubestock.tb_mae_material as m', 'pr.idmaterial', 'm.idmaterial')
+      .where('pr.idfinal_product', idfinal_product)
+      .where('pr.isactive', true)
+      .orderBy('m.material_name');
+
+    context.res = {
+      status: results.errors.length === 0 ? 200 : 207, // 207 Multi-Status si hay errores
+      body: {
+        success: results.errors.length === 0,
+        message: `Receta actualizada: ${results.added.length} agregado(s), ${results.updated.length} actualizado(s), ${results.removed.length} eliminado(s)`,
+        data: {
+          product_id: idfinal_product,
+          changes: {
+            added: results.added.length,
+            updated: results.updated.length,
+            removed: results.removed.length,
+          },
+          details: {
+            added: results.added,
+            updated: results.updated,
+            removed: results.removed,
+          },
+          current_recipe: updatedRecipes.map((r: any) => ({
+            idrecipe: r.idrecipe,
+            idmaterial: r.idmaterial,
+            material_name: r.material_name,
+            material_code: r.material_code,
+            material_type: r.material_type,
+            quantity: parseFloat(r.quantity),
+          })),
+          errors: results.errors,
+        },
+        timestamp: new Date().toISOString(),
+      },
+    };
+  } catch (error) {
+    logger.error('Error al actualizar receta del producto:', error);
+    context.res = {
+      status: 500,
+      body: {
+        success: false,
+        message: 'Error al actualizar receta del producto',
         timestamp: new Date().toISOString(),
       },
     };
@@ -2372,7 +2637,7 @@ async function handleDeleteRecipe(context: Context, req: HttpRequest): Promise<v
     }
 
     // Soft delete: desactivar en lugar de eliminar
-    await db.update('tb_mae_product_recipe', recipeId, {
+    await db.update('nubestock.tb_mae_product_recipe', recipeId, {
       isactive: false,
       modificationdate: new Date(),
     });
