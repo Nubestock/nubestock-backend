@@ -7,5 +7,6 @@
       "schedule": "0 */5 * * * *"
     }
   ],
-  "scriptFile": "../dist/machinery-alerts-timer/index.js"
+  "scriptFile": "../dist/machinery-alerts-timer/index.js",
+  "disabled": true
 }

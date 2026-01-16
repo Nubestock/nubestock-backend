@@ -6,7 +6,7 @@ name: Build and deploy Node.js project to Azure Function App - nubestock-backend
 on:
   push:
     branches:
-      - develop
+      - test
   workflow_dispatch:
 
 env:

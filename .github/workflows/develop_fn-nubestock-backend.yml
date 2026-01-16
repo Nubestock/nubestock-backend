@@ -22,22 +22,22 @@ jobs:
       contents: read
     uses: Nubestock/nubestock-workflows/.github/workflows/functions-deploy-action.yml@master
     with:
-      environment: ${{ github.event.inputs.environment || (github.ref_name == 'develop' && 'NUBESTOCK_DEV' || github.ref_name == 'uat' && 'NUBESTOCK_UAT' || github.ref_name == 'master' && 'NUBESTOCK_PRD' || 'NUBESTOCK_DEV') }}
+      environment: >-
+        ${{
+          github.event.inputs.environment != '' && github.event.inputs.environment
+          || github.ref_name == 'develop' && 'NUBESTOCK_DEV'
+          || github.ref_name == 'uat' && 'NUBESTOCK_UAT'
+          || github.ref_name == 'master' && 'NUBESTOCK_PRD'
+          || 'NUBESTOCK_DEV'
+        }}
       node_version: '22'
     secrets:
-      # Secrets de Azure (Autenticación)
-      AZ_CLIENT_ID: ${{ secrets.AZ_CLIENT_ID }}
-      AZ_CLIENT_SECRET: ${{ secrets.AZ_CLIENT_SECRET }}
-      AZ_TENANT_ID: ${{ secrets.AZ_TENANT_ID }}
-      AZ_SUBSCRIPTION_ID: ${{ secrets.AZ_SUBSCRIPTION_ID }}
-      
-      # Secrets de Azure (Recursos)
+      # === Secrets CORE de Azure (ÚNICOS OBLIGATORIOS) ===
+
+      AZ_CLIENT_ID:        ${{ secrets.AZ_CLIENT_ID }}
+      AZ_CLIENT_SECRET:    ${{ secrets.AZ_CLIENT_SECRET }}   # (temporal, hasta OIDC)
+      AZ_TENANT_ID:        ${{ secrets.AZ_TENANT_ID }}
+      AZ_SUBSCRIPTION_ID:  ${{ secrets.AZ_SUBSCRIPTION_ID }}
+
       AZ_FUNCTION_APP_NAME: ${{ secrets.AZ_FUNCTION_APP_NAME }}
-      AZ_RESOURCE_GROUP: ${{ secrets.AZ_RESOURCE_GROUP }}
-      
-      # Secrets de Base de Datos
-      DATABASE_HOSTNAME: ${{ secrets.DATABASE_HOSTNAME }}
-      DATABASE_PORT: ${{ secrets.DATABASE_PORT }}
-      DATABASE_USERNAME: ${{ secrets.DATABASE_USERNAME }}
-      DATABASE_PASSWORD: ${{ secrets.DATABASE_PASSWORD }}
-      DATABASE_NAME: ${{ secrets.DATABASE_NAME }}
+      AZ_RESOURCE_GROUP:    ${{ secrets.AZ_RESOURCE_GROUP }}
