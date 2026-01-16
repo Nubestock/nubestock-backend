@@ -1,4 +1,4 @@
-name: Build and deploy Node.js project to Azure Function App - fn-nubestock-backend
+name: Build and deploy Azure Functions - fn-nubestock-backend
 
 on:
   push:
