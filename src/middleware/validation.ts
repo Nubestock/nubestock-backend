@@ -1,12 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import Joi from 'joi';
 import { logger } from '../config/logger';
-
-export interface ValidationError {
-  field: string;
-  message: string;
-  value?: any;
-}
+import { ValidationError } from '../interfaces';
 
 export const validateRequest = (schema: Joi.ObjectSchema) => {
   return (req: Request, res: Response, next: NextFunction): void => {
@@ -138,7 +133,7 @@ export const commonSchemas = {
 
   // Validación de usuario
   user: Joi.object({
-    nameuser: Joi.string().min(2).max(100).required(),
+    name: Joi.string().min(2).max(100).required(),
     email: Joi.string().email().required(),
     password: Joi.string().min(8).max(100).required(),
     phone: Joi.string().min(10).max(20).optional(),

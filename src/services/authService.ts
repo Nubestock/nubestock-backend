@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import { Database } from '../config/database';
 import { config } from '../config/environment';
 import { logger } from '../config/logger';
-import { User, LoginRequest, LoginResponse, RegisterRequest } from '../types';
+import { User, LoginRequest, LoginResponse, RegisterRequest } from '../interfaces';
 import { emailService } from './emailService';
 
 export class AuthService {
@@ -23,7 +23,7 @@ export class AuthService {
     try {
       // Verificar si el email ya existe
       const existingUser = await this.db.getConnection()
-        .select('iduser')
+        .select('id')
         .from('nubestock.tb_mae_user')
         .where('email', userData.email)
         .first();
@@ -32,21 +32,48 @@ export class AuthService {
         throw new Error('El email ya está registrado');
       }
 
+      // Guardar la contraseña en texto plano temporalmente para el email (antes de hashearla)
+      const plainPassword = userData.password;
+
       // Encriptar la contraseña
       const passwordHash = await bcrypt.hash(userData.password, config.security.bcryptRounds);
 
       // Crear el usuario
       const newUser = await this.db.create<User>('nubestock.tb_mae_user', {
-        nameuser: userData.nameuser,
+        name: userData.name,
         email: userData.email,
-        passwordhash: passwordHash,
+        pwd_hash: passwordHash,
         phone: userData.phone,
-        isactive: true,
-        failed_login_attempts: 0,
+        is_active: true,
+        last_login: new Date(),
       });
 
+      // Enviar email de bienvenida con la contraseña por defecto
+      try {
+        const emailSent = await emailService.sendWelcomeEmail(
+          newUser.email,
+          newUser.name,
+          plainPassword
+        );
+        if (emailSent) {
+          logger.info('Email de bienvenida enviado exitosamente', {
+            userId: (newUser as any).id,
+            email: newUser.email,
+          });
+        } else {
+          logger.warn('Email de bienvenida no enviado (servicio deshabilitado)', {
+            userId: (newUser as any).id,
+            email: newUser.email,
+          });
+        }
+      } catch (emailError) {
+        logger.error('Error al enviar email de bienvenida:', emailError);
+        // No fallamos la operación si el email falla, solo logueamos el error
+        // El usuario ya fue creado exitosamente
+      }
+
       logger.info('Usuario registrado exitosamente', {
-        userId: (newUser as any).iduser,
+        userId: (newUser as any).id,
         email: newUser.email,
       });
 
@@ -67,45 +94,38 @@ export class AuthService {
         .select('*')
         .from('nubestock.tb_mae_user')
         .where('email', credentials.email)
-        .where('isactive', true)
+        .where('is_active', true)
         .first();
 
       if (!user) {
         throw new Error('Credenciales inválidas');
       }
 
-      // Verificar si la cuenta está bloqueada
-      if (user.account_locked_until && new Date() < user.account_locked_until) {
-        throw new Error('Cuenta bloqueada temporalmente');
-      }
+      // Verificar si la cuenta está bloqueada (campo eliminado en nuevo esquema)
+      // account_locked_until ya no existe
 
       // Verificar la contraseña
-      const isValidPassword = await bcrypt.compare(credentials.password, user.passwordhash);
+      const isValidPassword = await bcrypt.compare(credentials.password, user.pwd_hash);
       
       if (!isValidPassword) {
-        // Incrementar intentos fallidos
-        await this.incrementFailedAttempts(user.iduser);
         throw new Error('Credenciales inválidas');
       }
 
-      // Resetear intentos fallidos si el login es exitoso
-      await this.resetFailedAttempts(user.iduser);
-
       // Actualizar último login
-      await this.updateLastLogin(user.iduser);
+      await this.updateLastLogin(user.id.toString());
 
       // Obtener roles y permisos del usuario
-      const userRolesAndPermissions = await this.getUserRolesAndPermissions(user.iduser);
+      const userRolesAndPermissions = await this.getUserRolesAndPermissions(user.id.toString());
 
       // Generar tokens con información completa
-      const token = this.generateToken(user.iduser, userRolesAndPermissions);
-      const refreshToken = this.generateRefreshToken(user.iduser);
+      const token = this.generateToken(user.id.toString(), userRolesAndPermissions);
+      const refreshToken = this.generateRefreshToken(user.id.toString());
 
       // Remover la contraseña del objeto de respuesta
-      const { passwordhash, ...userWithoutPassword } = user;
+      const { pwd_hash, ...userWithoutPassword } = user;
 
       logger.info('Login exitoso', {
-        userId: user.iduser,
+        userId: user.id,
         email: user.email,
       });
 
@@ -134,16 +154,16 @@ export class AuthService {
 
       const user = await this.db.findById<User>('nubestock.tb_mae_user', decoded.userId);
       
-      if (!user || !user.isactive) {
+      if (!user || !user.is_active) {
         throw new Error('Usuario no válido');
       }
 
       // Obtener roles y permisos para el nuevo token
-      const userRolesAndPermissions = await this.getUserRolesAndPermissions(user.iduser);
-      const newToken = this.generateToken(user.iduser, userRolesAndPermissions);
+      const userRolesAndPermissions = await this.getUserRolesAndPermissions(user.id.toString());
+      const newToken = this.generateToken(user.id.toString(), userRolesAndPermissions);
       
       logger.info('Token refrescado exitosamente', {
-        userId: user.iduser,
+        userId: user.id,
       });
 
       return {
@@ -184,7 +204,7 @@ export class AuthService {
       }
 
       // Verificar la contraseña actual
-      const isValidPassword = await bcrypt.compare(currentPassword, user.passwordhash);
+      const isValidPassword = await bcrypt.compare(currentPassword, user.pwd_hash);
       
       if (!isValidPassword) {
         throw new Error('Contraseña actual incorrecta');
@@ -195,8 +215,8 @@ export class AuthService {
 
       // Actualizar la contraseña
       await this.db.update('nubestock.tb_mae_user', userId, {
-        passwordhash: newPasswordHash,
-        modificationdate: new Date(),
+        pwd_hash: newPasswordHash,
+        modification_date: new Date(),
       });
 
       logger.info('Contraseña cambiada exitosamente', {
@@ -214,10 +234,10 @@ export class AuthService {
   async requestPasswordReset(email: string): Promise<void> {
     try {
       const user = await this.db.getConnection()
-        .select('iduser', 'nameuser', 'email')
+        .select('id', 'name', 'email')
         .from('nubestock.tb_mae_user')
         .where('email', email)
-        .where('isactive', true)
+        .where('is_active', true)
         .first();
 
       if (!user) {
@@ -235,19 +255,19 @@ export class AuthService {
       const expiresAt = new Date(Date.now() + config.security.passwordResetTokenExpiry);
 
       // Almacenar token en la base de datos
-      await this.storeResetToken(user.iduser, resetToken, expiresAt);
+      await this.storeResetToken(user.id, resetToken, expiresAt);
 
       // Enviar email al usuario
       try {
-        const emailSent = await emailService.sendPasswordResetEmail(user.email, user.nameuser, resetToken);
+        const emailSent = await emailService.sendPasswordResetEmail(user.email, user.name, resetToken);
         if (emailSent) {
           logger.info('Email de restablecimiento enviado exitosamente', {
-            userId: user.iduser,
+            userId: user.id,
             email: user.email,
           });
         } else {
           logger.warn('Email de restablecimiento no enviado (servicio deshabilitado). Token generado:', {
-            userId: user.iduser,
+            userId: user.id,
             email: user.email,
             resetToken: resetToken.substring(0, 10) + '...', // Solo primeros 10 caracteres para logs
           });
@@ -258,7 +278,7 @@ export class AuthService {
       }
 
       logger.info('Solicitud de reset de contraseña', {
-        userId: user.iduser,
+        userId: user.id,
         email,
       });
     } catch (error) {
@@ -293,20 +313,20 @@ export class AuthService {
       // Verificar si existe la tabla, si no, crear registro temporal
       // Por ahora, almacenamos en una tabla dedicada que debería existir
       const tokenData = {
-        iduser: userId,
+        id_user: userId,
         reset_token: token,
         expires_at: expiresAt,
-        isactive: true,
-        creationdate: new Date(),
-        modificationdate: new Date(),
+        is_active: true,
+        creation_date: new Date(),
+        modification_date: new Date(),
       };
 
       // Intentar insertar o actualizar
       await this.db.getConnection()
         .from('nubestock.tb_ope_password_reset_token')
-        .where('iduser', userId)
-        .where('isactive', true)
-        .update({ isactive: false, modificationdate: new Date() });
+        .where('id_user', userId)
+        .where('is_active', true)
+        .update({ is_active: false, modification_date: new Date() });
 
       await this.db.getConnection()
         .insert(tokenData)
@@ -333,13 +353,13 @@ export class AuthService {
    * Solicita restablecimiento de contraseña por parte de un administrador
    * Genera un token, lo almacena y envía un email al usuario
    */
-  async requestPasswordResetByAdmin(targetEmail: string, requestedBy: string): Promise<{ userId: string; email: string; nameuser: string; token?: string }> {
+  async requestPasswordResetByAdmin(targetEmail: string, requestedBy: string): Promise<{ userId: string; email: string; name: string; token?: string }> {
     try {
       const user = await this.db.getConnection()
-        .select('iduser', 'nameuser', 'email')
+        .select('id', 'name', 'email')
         .from('nubestock.tb_mae_user')
         .where('email', targetEmail)
-        .where('isactive', true)
+        .where('is_active', true)
         .first();
 
       if (!user) {
@@ -353,19 +373,19 @@ export class AuthService {
       const expiresAt = new Date(Date.now() + config.security.passwordResetTokenExpiry);
 
       // Almacenar token en la base de datos
-      await this.storeResetToken(user.iduser, resetToken, expiresAt);
+      await this.storeResetToken(user.id, resetToken, expiresAt);
 
       // Enviar email al usuario
       try {
-        const emailSent = await emailService.sendPasswordResetEmail(user.email, user.nameuser, resetToken);
+        const emailSent = await emailService.sendPasswordResetEmail(user.email, user.name, resetToken);
         if (emailSent) {
           logger.info('Email de restablecimiento enviado exitosamente', {
-            targetUserId: user.iduser,
+            targetUserId: user.id,
             targetEmail: user.email,
           });
         } else {
           logger.warn('Email de restablecimiento no enviado (servicio deshabilitado). Token generado:', {
-            targetUserId: user.iduser,
+            targetUserId: user.id,
             targetEmail: user.email,
             resetToken: resetToken.substring(0, 10) + '...', // Solo primeros 10 caracteres para logs
           });
@@ -377,16 +397,16 @@ export class AuthService {
 
       // Loguear la acción de administrador
       logger.info('Solicitud de reset de contraseña por administrador', {
-        targetUserId: user.iduser,
+        targetUserId: user.id,
         targetEmail: user.email,
         requestedBy,
         tokenGenerated: true,
       });
 
       return {
-        userId: user.iduser,
+        userId: user.id,
         email: user.email,
-        nameuser: user.nameuser,
+        name: user.name,
         // No incluimos el token en la respuesta por seguridad (solo se envía por email)
       };
     } catch (error) {
@@ -410,7 +430,7 @@ export class AuthService {
         .select('*')
         .from('nubestock.tb_ope_password_reset_token')
         .where('reset_token', token)
-        .where('isactive', true)
+        .where('is_active', true)
         .first();
 
       if (!resetToken) {
@@ -425,18 +445,18 @@ export class AuthService {
         // Marcar el token como inactivo
         await this.db.getConnection()
           .from('nubestock.tb_ope_password_reset_token')
-          .where('idreset_token', resetToken.idreset_token)
-          .update({ isactive: false, modificationdate: now });
+          .where('id', resetToken.id)
+          .update({ is_active: false, modification_date: now });
 
         throw new Error('Token de restablecimiento expirado');
       }
 
       // Verificar que el usuario existe y está activo
       const user = await this.db.getConnection()
-        .select('iduser', 'email')
+        .select('id', 'email')
         .from('nubestock.tb_mae_user')
-        .where('iduser', resetToken.iduser)
-        .where('isactive', true)
+        .where('id', resetToken.id_user)
+        .where('is_active', true)
         .first();
 
       if (!user) {
@@ -450,23 +470,23 @@ export class AuthService {
       await this.db.transaction(async (trx) => {
         // Actualizar contraseña
         await trx('nubestock.tb_mae_user')
-          .where('iduser', resetToken.iduser)
+          .where('id', resetToken.id_user)
           .update({
-            passwordhash: passwordHash,
-            modificationdate: now,
+            pwd_hash: passwordHash,
+            modification_date: now,
           });
 
         // Marcar el token como usado
         await trx('nubestock.tb_ope_password_reset_token')
-          .where('idreset_token', resetToken.idreset_token)
+          .where('id', resetToken.id)
           .update({
-            isactive: false,
-            modificationdate: now,
+            is_active: false,
+            modification_date: now,
           });
       });
 
       logger.info('Contraseña restablecida exitosamente con token', {
-        userId: resetToken.iduser,
+        userId: resetToken.id_user,
         email: user.email,
         tokenUsed: true,
       });
@@ -487,33 +507,33 @@ export class AuthService {
     try {
       // Obtener roles del usuario con información completa
       const userRoles = await this.db.getConnection()
-        .select('r.idrole', 'r.namerole', 'r.description')
+        .select('r.id', 'r.name', 'r.description')
         .from('nubestock.tb_mae_user_role as ur')
-        .join('nubestock.tb_mae_role as r', 'ur.idrole', 'r.idrole')
-        .where('ur.iduser', userId)
-        .where('ur.isactive', true)
-        .where('r.isactive', true);
+        .join('nubestock.tb_mae_role as r', 'ur.id_role', 'r.id')
+        .where('ur.id_user', userId)
+        .where('ur.is_active', true)
+        .where('r.is_active', true);
 
       // Obtener permisos del usuario (a través de sus roles)
       const userPermissions = await this.db.getConnection()
-        .select('p.namepermission')
+        .select('p.name')
         .from('nubestock.tb_mae_user_role as ur')
-        .join('nubestock.tb_mae_role_permission as rp', 'ur.idrole', 'rp.idrole')
-        .join('nubestock.tb_mae_permission as p', 'rp.idpermission', 'p.idpermission')
-        .where('ur.iduser', userId)
-        .where('ur.isactive', true)
-        .where('rp.isactive', true)
-        .where('p.isactive', true)
+        .join('nubestock.tb_mae_role_permission as rp', 'ur.id_role', 'rp.id_role')
+        .join('nubestock.tb_mae_permission as p', 'rp.id_permission', 'p.id')
+        .where('ur.id_user', userId)
+        .where('ur.is_active', true)
+        .where('rp.is_active', true)
+        .where('p.is_active', true)
         .distinct();
 
       return {
-        roles: userRoles.map(r => r.namerole),
+        roles: userRoles.map(r => r.name),
         rolesDetails: userRoles.map(r => ({
-          idrole: r.idrole,
-          namerole: r.namerole,
+          idrole: r.id.toString(),
+          namerole: r.name,
           description: r.description || undefined
         })),
-        permissions: userPermissions.map(p => p.namepermission)
+        permissions: userPermissions.map(p => p.name)
       };
     } catch (error) {
       logger.error('Error al obtener roles y permisos del usuario:', error);
@@ -586,53 +606,6 @@ export class AuthService {
     return 86400; // 24 horas por defecto
   }
 
-  /**
-   * Incrementa los intentos fallidos de login
-   */
-  private async incrementFailedAttempts(userId: string): Promise<void> {
-    try {
-      const user = await this.db.findById<User>('nubestock.tb_mae_user', userId);
-      if (!user) return;
-
-      const newAttempts = user.failed_login_attempts + 1;
-      const updateData: Partial<User> = {
-        failed_login_attempts: newAttempts,
-        modificationdate: new Date(),
-      };
-
-      // Bloquear la cuenta si se excede el límite
-      if (newAttempts >= config.security.maxLoginAttempts) {
-        updateData.account_locked_until = new Date(
-          Date.now() + config.security.lockoutDuration
-        );
-      }
-
-      await this.db.update('nubestock.tb_mae_user', userId, updateData);
-
-      logger.warn('Intento de login fallido', {
-        userId,
-        attempts: newAttempts,
-        locked: newAttempts >= config.security.maxLoginAttempts,
-      });
-    } catch (error) {
-      logger.error('Error al incrementar intentos fallidos:', error);
-    }
-  }
-
-  /**
-   * Resetea los intentos fallidos de login
-   */
-  private async resetFailedAttempts(userId: string): Promise<void> {
-    try {
-      await this.db.update('nubestock.tb_mae_user', userId, {
-        failed_login_attempts: 0,
-        account_locked_until: null,
-        modificationdate: new Date(),
-      });
-    } catch (error) {
-      logger.error('Error al resetear intentos fallidos:', error);
-    }
-  }
 
   /**
    * Actualiza el último login del usuario
@@ -641,7 +614,7 @@ export class AuthService {
     try {
       await this.db.update('nubestock.tb_mae_user', userId, {
         last_login: new Date(),
-        modificationdate: new Date(),
+        modification_date: new Date(),
       });
     } catch (error) {
       logger.error('Error al actualizar último login:', error);

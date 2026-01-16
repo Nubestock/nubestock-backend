@@ -1,14 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { config } from '../config/environment';
-
-export interface AuthenticatedRequest {
-  userId: string;
-  userEmail: string;
-  userRole?: string;
-  roles?: string[];
-  rolesDetails?: Array<{ idrole: string; namerole: string; description?: string }>;
-  permissions?: string[];
-}
+import { AuthenticatedRequest } from '../interfaces';
 
 export const authenticateToken = (req: any): AuthenticatedRequest | null => {
   try {
@@ -120,21 +112,35 @@ export const requireAuth = (req: any): { success: boolean; user?: AuthenticatedR
 
 /**
  * Verifica si el usuario tiene un permiso específico
+ * Si el usuario tiene el permiso "admin", automáticamente tiene acceso a todo
  */
 export const hasPermission = (user: AuthenticatedRequest, permission: string): boolean => {
   if (!user.permissions || user.permissions.length === 0) {
     return false;
   }
+  
+  // Si el usuario tiene el permiso "admin", tiene acceso a todo
+  if (user.permissions.includes('admin')) {
+    return true;
+  }
+  
   return user.permissions.includes(permission);
 };
 
 /**
  * Verifica si el usuario tiene alguno de los permisos especificados
+ * Si el usuario tiene el permiso "admin", automáticamente tiene acceso a todo
  */
 export const hasAnyPermission = (user: AuthenticatedRequest, permissions: string[]): boolean => {
   if (!user.permissions || user.permissions.length === 0) {
     return false;
   }
+  
+  // Si el usuario tiene el permiso "admin", tiene acceso a todo
+  if (user.permissions.includes('admin')) {
+    return true;
+  }
+  
   return permissions.some(permission => user.permissions?.includes(permission));
 };
 

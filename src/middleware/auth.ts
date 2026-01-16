@@ -2,13 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { config } from '../config/environment';
 import { Database } from '../config/database';
-import { User } from '../types';
+import { User, AuthRequest } from '../interfaces';
 import { logger } from '../config/logger';
-
-export interface AuthRequest extends Request {
-  user?: User;
-  token?: string;
-}
 
 export const authenticateToken = async (
   req: AuthRequest,
@@ -35,7 +30,7 @@ export const authenticateToken = async (
     const db = Database.getInstance();
     const user = await db.findById<User>('tb_mae_user', decoded.userId);
 
-    if (!user || !user.isactive) {
+    if (!user || !user.is_active) {
       res.status(401).json({
         success: false,
         message: 'Usuario no válido o inactivo',
@@ -44,15 +39,7 @@ export const authenticateToken = async (
       return;
     }
 
-    // Verificar si la cuenta está bloqueada
-    if (user.account_locked_until && new Date() < user.account_locked_until) {
-      res.status(401).json({
-        success: false,
-        message: 'Cuenta bloqueada temporalmente',
-        timestamp: new Date().toISOString(),
-      });
-      return;
-    }
+    // Verificar si la cuenta está bloqueada (campo eliminado en nuevo esquema - account_locked_until ya no existe)
 
     req.user = user;
     req.token = token;
@@ -83,14 +70,14 @@ export const requireRole = (roles: string[]) => {
       
       // Obtener roles del usuario
       const userRoles = await db.getConnection()
-        .select('r.namerole')
-        .from('tb_mae_user_role as ur')
-        .join('tb_mae_role as r', 'ur.idrole', 'r.idrole')
-        .where('ur.iduser', req.user.iduser)
-        .where('ur.isactive', true)
-        .where('r.isactive', true);
+        .select('r.name')
+        .from('nubestock.tb_mae_user_role as ur')
+        .join('nubestock.tb_mae_role as r', 'ur.id_role', 'r.id')
+        .where('ur.id_user', req.user.id)
+        .where('ur.is_active', true)
+        .where('r.is_active', true);
 
-      const userRoleNames = userRoles.map(role => role.namerole);
+      const userRoleNames = userRoles.map(role => role.name);
       
       // Verificar si el usuario tiene alguno de los roles requeridos
       const hasRequiredRole = roles.some(role => userRoleNames.includes(role));
@@ -132,16 +119,16 @@ export const requirePermission = (permissions: string[]) => {
       
       // Obtener permisos del usuario a través de sus roles
       const userPermissions = await db.getConnection()
-        .select('p.namepermission')
-        .from('tb_mae_user_role as ur')
-        .join('tb_mae_role_permission as rp', 'ur.idrole', 'rp.idrole')
-        .join('tb_mae_permission as p', 'rp.idpermission', 'p.idpermission')
-        .where('ur.iduser', req.user.iduser)
-        .where('ur.isactive', true)
-        .where('rp.isactive', true)
-        .where('p.isactive', true);
+        .select('p.name')
+        .from('nubestock.tb_mae_user_role as ur')
+        .join('nubestock.tb_mae_role_permission as rp', 'ur.id_role', 'rp.id_role')
+        .join('nubestock.tb_mae_permission as p', 'rp.id_permission', 'p.id')
+        .where('ur.id_user', req.user.id)
+        .where('ur.is_active', true)
+        .where('rp.is_active', true)
+        .where('p.is_active', true);
 
-      const userPermissionNames = userPermissions.map(perm => perm.namepermission);
+      const userPermissionNames = userPermissions.map(perm => perm.name);
       
       // Verificar si el usuario tiene alguno de los permisos requeridos
       const hasRequiredPermission = permissions.some(permission => 
@@ -184,7 +171,7 @@ export const optionalAuth = async (
         const db = Database.getInstance();
         const user = await db.findById<User>('tb_mae_user', decoded.userId);
         
-        if (user && user.isactive) {
+        if (user && user.is_active) {
           req.user = user;
           req.token = token;
         }
@@ -205,7 +192,7 @@ export const rateLimitByUser = (maxRequests: number, windowMs: number) => {
   const requests = new Map<string, { count: number; resetTime: number }>();
 
   return (req: AuthRequest, res: Response, next: NextFunction): void => {
-    const userId = req.user?.iduser;
+    const userId = req.user?.id?.toString();
     
     if (!userId) {
       next();

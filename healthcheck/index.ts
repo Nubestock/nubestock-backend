@@ -1,6 +1,7 @@
 import { AzureFunction, Context, HttpRequest } from '../src/types/azure-functions';
 import { Database } from '../src/config/database';
 import { logger } from '../src/config/logger';
+import { logErrorResponse } from '../src/utils/httpLogger';
 
 const db = Database.getInstance();
 
@@ -90,6 +91,7 @@ const healthcheckHandler: AzureFunction = async (context: Context, req: HttpRequ
     };
   } catch (error: any) {
     logger.error('Health check error:', error);
+    (context as any).__errorLogged = true;
     
     healthStatus.status = 'unhealthy';
     healthStatus.checks.api = {
@@ -104,6 +106,8 @@ const healthcheckHandler: AzureFunction = async (context: Context, req: HttpRequ
         'Content-Type': 'application/json'
       }
     };
+  } finally {
+    logErrorResponse(context, req, 'healthcheck');
   }
 };
 

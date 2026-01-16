@@ -1,17 +1,93 @@
 import { AzureFunction, Context, HttpRequest } from '../src/types/azure-functions';
-import { Database } from '../src/config/database';
 import { logger } from '../src/config/logger';
-import { User, QueryFilters } from '../src/types';
-import { requireAuth, requireAdmin, requireAnyPermission } from '../src/middleware/authMiddleware';
-import Joi from 'joi';
+import { logErrorResponse } from '../src/utils/httpLogger';
+import { requireAuth, requireAnyPermission } from '../src/middleware/authMiddleware';
+import * as userController from '../src/controllers/userController';
 
-const db = Database.getInstance();
+// Tipo para los handlers de rutas
+type Handler = (context: Context, req: HttpRequest, action?: string) => Promise<void>;
+
+// Helpers para respuestas comunes
+function badRequest(context: Context, message: string): void {
+  context.res = {
+    status: 400,
+    body: {
+      success: false,
+      message,
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
+
+function methodNotAllowed(context: Context): void {
+  context.res = {
+    status: 405,
+    body: {
+      success: false,
+      message: 'Método no permitido',
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
+
+// Wrappers para handlers que manejan ID
+const getUserHandler: Handler = async (ctx, req, action) => {
+  if (action) {
+    await userController.getUser(ctx, req, action);
+  } else {
+    await userController.listUsers(ctx, req);
+  }
+};
+
+const updateUserHandler: Handler = async (ctx, req, action) => {
+  if (!action) {
+    badRequest(ctx, 'ID de usuario requerido');
+    return;
+  }
+  await userController.updateUser(ctx, req, action);
+};
+
+const deleteUserHandler: Handler = async (ctx, req, action) => {
+  if (!action) {
+    badRequest(ctx, 'ID de usuario requerido');
+    return;
+  }
+  await userController.deleteUser(ctx, req, action);
+};
+
+// Permisos requeridos por método HTTP
+const methodPermissions: Record<string, string[]> = {
+  GET: ['users_read', 'users_manage'],
+  POST: ['users_write', 'users_manage'],
+  PUT: ['users_write', 'users_manage'],
+  DELETE: ['users_manage'],
+};
+
+// Mapa de rutas por método HTTP
+const routes: Record<string, Record<string, Handler>> = {
+  GET: {
+    list: (ctx, req) => userController.listUsers(ctx, req),
+    default: getUserHandler,
+  },
+
+  POST: {
+    default: (ctx, req) => userController.createUser(ctx, req),
+  },
+
+  PUT: {
+    default: updateUserHandler,
+  },
+
+  DELETE: {
+    default: deleteUserHandler,
+  },
+};
 
 const usersHandler: AzureFunction = async (context: Context, req: HttpRequest): Promise<void> => {
   try {
     const { action } = req.params;
-    const method = req.method;
-    
+    const method = req.method || 'GET';
+
     logger.info('Users function triggered', {
       action,
       method,
@@ -19,97 +95,57 @@ const usersHandler: AzureFunction = async (context: Context, req: HttpRequest): 
     });
 
     // Verificar autenticación y permisos según el método
-    // Los usuarios requieren permisos de administrador
-    let authResult: { success: boolean; user?: any; error?: string };
-    
-    switch (method) {
-      case 'GET':
-        // GET requiere permiso de lectura de usuarios
-        authResult = requireAnyPermission(req, ['users_read', 'users_manage']);
-        break;
-      case 'POST':
-        // POST requiere permiso de escritura/gestión de usuarios
-        authResult = requireAnyPermission(req, ['users_write', 'users_manage']);
-        break;
-      case 'PUT':
-        // PUT requiere permiso de escritura/gestión de usuarios
-        authResult = requireAnyPermission(req, ['users_write', 'users_manage']);
-        break;
-      case 'DELETE':
-        // DELETE requiere permiso de gestión de usuarios (solo admin)
-        authResult = requireAnyPermission(req, ['users_manage']);
-        break;
-      default:
-        authResult = requireAuth(req);
-    }
-
-    if (!authResult.success) {
-      context.res = {
-        status: authResult.error?.includes('permisos') ? 403 : 401,
-        body: {
-          success: false,
-          message: authResult.error || 'Usuario no autenticado',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
-
-    const { userId } = authResult.user!;
-
-    switch (method) {
-      case 'GET':
-        if (action === 'list') {
-          await handleListUsers(context, req);
-        } else if (action) {
-          await handleGetUser(context, req, action);
-        } else {
-          await handleListUsers(context, req);
-        }
-        break;
-      case 'POST':
-        await handleCreateUser(context, req);
-        break;
-      case 'PUT':
-        if (action) {
-          await handleUpdateUser(context, req, action);
-        } else {
-          context.res = {
-            status: 400,
-            body: {
-              success: false,
-              message: 'ID de usuario requerido',
-              timestamp: new Date().toISOString(),
-            },
-          };
-        }
-        break;
-      case 'DELETE':
-        if (action) {
-          await handleDeleteUser(context, req, action);
-        } else {
-          context.res = {
-            status: 400,
-            body: {
-              success: false,
-              message: 'ID de usuario requerido',
-              timestamp: new Date().toISOString(),
-            },
-          };
-        }
-        break;
-      default:
+    const requiredPermissions = methodPermissions[method];
+    if (requiredPermissions) {
+      const authResult = requireAnyPermission(req, requiredPermissions);
+      if (!authResult.success) {
         context.res = {
-          status: 405,
+          status: authResult.error?.includes('permisos') ? 403 : 401,
           body: {
             success: false,
-            message: 'Método no permitido',
+            message: authResult.error || 'Usuario no autenticado',
             timestamp: new Date().toISOString(),
           },
         };
+        return;
+      }
+    } else {
+      // Para métodos no definidos, verificar autenticación básica
+      const authResult = requireAuth(req);
+      if (!authResult.success) {
+        context.res = {
+          status: 401,
+          body: {
+            success: false,
+            message: authResult.error || 'Usuario no autenticado',
+            timestamp: new Date().toISOString(),
+          },
+        };
+        return;
+      }
     }
+
+    // Resolver la ruta dinámicamente
+    const methodRoutes = routes[method];
+    if (!methodRoutes) {
+      methodNotAllowed(context);
+      return;
+    }
+
+    // Buscar handler: primero por action, luego default
+    const handler = methodRoutes[action || ''] || methodRoutes.default;
+
+    if (!handler) {
+      methodNotAllowed(context);
+      return;
+    }
+
+    // Ejecutar el handler
+    await handler(context, req, action);
+
   } catch (error) {
     logger.error('Error en función de usuarios:', error);
+    (context as any).__errorLogged = true;
     context.res = {
       status: 500,
       body: {
@@ -118,408 +154,9 @@ const usersHandler: AzureFunction = async (context: Context, req: HttpRequest): 
         timestamp: new Date().toISOString(),
       },
     };
+  } finally {
+    logErrorResponse(context, req, 'users');
   }
 };
-
-async function handleListUsers(context: Context, req: HttpRequest): Promise<void> {
-  try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 10;
-    const search = req.query.search as string;
-    const isactive = req.query.isactive as string;
-
-    let query = db.getConnection()
-      .select(
-        'u.iduser',
-        'u.nameuser',
-        'u.email',
-        'u.phone',
-        'u.isactive',
-        'u.last_login',
-        'u.creationdate'
-      )
-      .from('nubestock.tb_mae_user as u')
-      .orderBy('u.creationdate', 'desc');
-
-    // Aplicar filtros
-    if (search) {
-      query = query.where(function() {
-        this.where('u.nameuser', 'ilike', `%${search}%`)
-          .orWhere('u.email', 'ilike', `%${search}%`);
-      });
-    }
-
-    if (isactive !== undefined) {
-      query = query.where('u.isactive', isactive === 'true');
-    }
-
-    // Contar total usando query builder para evitar problemas de parámetros
-    const countQuery = db.getConnection()
-      .count('* as count')
-      .from('nubestock.tb_mae_user as u');
-
-    if (search) {
-      countQuery.where(function() {
-        this.where('u.nameuser', 'ilike', `%${search}%`)
-          .orWhere('u.email', 'ilike', `%${search}%`);
-      });
-    }
-
-    if (isactive !== undefined) {
-      countQuery.where('u.isactive', isactive === 'true');
-    }
-
-    const countResult = await countQuery;
-    const total = parseInt((countResult[0] as any).count as string);
-
-    // Aplicar paginación
-    const offset = (page - 1) * limit;
-    const users = await query.offset(offset).limit(limit);
-
-    // Obtener roles para cada usuario
-    const userIds = users.map((u: any) => u.iduser);
-    const userRoles = await db.getConnection()
-      .select('ur.iduser', 'r.namerole')
-      .from('nubestock.tb_mae_user_role as ur')
-      .join('nubestock.tb_mae_role as r', 'ur.idrole', 'r.idrole')
-      .whereIn('ur.iduser', userIds)
-      .where('ur.isactive', true)
-      .where('r.isactive', true);
-
-    // Agrupar roles por usuario
-    const rolesByUser: Record<string, string[]> = {};
-    userRoles.forEach((ur: any) => {
-      if (!rolesByUser[ur.iduser]) {
-        rolesByUser[ur.iduser] = [];
-      }
-      rolesByUser[ur.iduser].push(ur.namerole);
-    });
-
-    // Agregar roles a cada usuario
-    const usersWithRoles = users.map((user: any) => ({
-      ...user,
-      roles: rolesByUser[user.iduser] || [],
-    }));
-
-    context.res = {
-      status: 200,
-      body: {
-        success: true,
-        data: usersWithRoles,
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages: Math.ceil(total / limit),
-        },
-        timestamp: new Date().toISOString(),
-      },
-    };
-  } catch (error) {
-    logger.error('Error al listar usuarios:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al listar usuarios',
-        timestamp: new Date().toISOString(),
-      },
-    };
-  }
-}
-
-async function handleGetUser(context: Context, req: HttpRequest, userId: string): Promise<void> {
-  try {
-    const user = await db.findById<User>('nubestock.tb_mae_user', userId, [
-      'iduser', 'nameuser', 'email', 'phone', 'isactive', 
-      'last_login', 'failed_login_attempts', 'creationdate', 'modificationdate'
-    ]);
-
-    if (!user) {
-      context.res = {
-        status: 404,
-        body: {
-          success: false,
-          message: 'Usuario no encontrado',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
-
-    // Obtener roles del usuario
-    const roles = await db.getConnection()
-      .select('r.namerole', 'r.description')
-      .from('nubestock.tb_mae_user_role as ur')
-      .join('nubestock.tb_mae_role as r', 'ur.idrole', 'r.idrole')
-      .where('ur.iduser', userId)
-      .where('ur.isactive', true)
-      .where('r.isactive', true);
-
-    context.res = {
-      status: 200,
-      body: {
-        success: true,
-        data: {
-          ...user,
-          roles: roles.map(role => role.namerole),
-        },
-        timestamp: new Date().toISOString(),
-      },
-    };
-  } catch (error) {
-    logger.error('Error al obtener usuario:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al obtener usuario',
-        timestamp: new Date().toISOString(),
-      },
-    };
-  }
-}
-
-async function handleCreateUser(context: Context, req: HttpRequest): Promise<void> {
-  try {
-    const userSchema = Joi.object({
-      nameuser: Joi.string().min(2).max(100).required(),
-      email: Joi.string().email().required(),
-      password: Joi.string().min(8).max(100).required(),
-      phone: Joi.string().min(10).max(20).optional(),
-      isactive: Joi.boolean().optional(),
-    });
-
-    const { error, value } = userSchema.validate(req.body);
-    
-    if (error) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'Datos de entrada inválidos',
-          errors: error.details.map(detail => ({
-            field: detail.path.join('.'),
-            message: detail.message,
-          })),
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
-
-    // Verificar si el email ya existe
-    const existingUser = await db.getConnection()
-      .select('iduser')
-      .from('nubestock.tb_mae_user')
-      .where('email', value.email)
-      .first();
-
-    if (existingUser) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'El email ya está registrado',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
-
-    // Encriptar contraseña
-    const bcrypt = require('bcryptjs');
-    const passwordHash = await bcrypt.hash(value.password, 12);
-
-    const newUser = await db.create('nubestock.tb_mae_user', {
-      nameuser: value.nameuser,
-      email: value.email,
-      passwordhash: passwordHash,
-      phone: value.phone,
-      isactive: value.isactive !== undefined ? value.isactive : true,
-      failed_login_attempts: 0,
-    });
-
-    // Remover la contraseña del resultado
-    const { passwordhash, ...userWithoutPassword } = newUser;
-
-    context.res = {
-      status: 201,
-      body: {
-        success: true,
-        data: userWithoutPassword,
-        message: 'Usuario creado exitosamente',
-        timestamp: new Date().toISOString(),
-      },
-    };
-  } catch (error) {
-    logger.error('Error al crear usuario:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al crear usuario',
-        timestamp: new Date().toISOString(),
-      },
-    };
-  }
-}
-
-async function handleUpdateUser(context: Context, req: HttpRequest, userId: string): Promise<void> {
-  try {
-    const updateSchema = Joi.object({
-      nameuser: Joi.string().min(2).max(100).optional(),
-      email: Joi.string().email().optional(),
-      phone: Joi.string().min(10).max(20).optional(),
-      isactive: Joi.boolean().optional(),
-    });
-
-    const { error, value } = updateSchema.validate(req.body);
-    
-    if (error) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'Datos de entrada inválidos',
-          errors: error.details.map(detail => ({
-            field: detail.path.join('.'),
-            message: detail.message,
-          })),
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
-
-    // Verificar si el usuario existe
-    const existingUser = await db.findById<User>('nubestock.tb_mae_user', userId);
-    if (!existingUser) {
-      context.res = {
-        status: 404,
-        body: {
-          success: false,
-          message: 'Usuario no encontrado',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
-
-    // Verificar si el email ya existe (si se está cambiando)
-    if (value.email && value.email !== existingUser.email) {
-      const emailExists = await db.getConnection()
-        .select('iduser')
-        .from('nubestock.tb_mae_user')
-        .where('email', value.email)
-        .where('iduser', '!=', userId)
-        .first();
-
-      if (emailExists) {
-        context.res = {
-          status: 400,
-          body: {
-            success: false,
-            message: 'El email ya está registrado',
-            timestamp: new Date().toISOString(),
-          },
-        };
-        return;
-      }
-    }
-
-    const updatedUser = await db.update('nubestock.tb_mae_user', userId, {
-      ...value,
-      modificationdate: new Date(),
-    });
-
-    if (!updatedUser) {
-      context.res = {
-        status: 500,
-        body: {
-          success: false,
-          message: 'Error al actualizar usuario',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
-
-    // Remover la contraseña del resultado
-    const { passwordhash, ...userWithoutPassword } = updatedUser as any;
-
-    context.res = {
-      status: 200,
-      body: {
-        success: true,
-        data: userWithoutPassword,
-        message: 'Usuario actualizado exitosamente',
-        timestamp: new Date().toISOString(),
-      },
-    };
-  } catch (error) {
-    logger.error('Error al actualizar usuario:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al actualizar usuario',
-        timestamp: new Date().toISOString(),
-      },
-    };
-  }
-}
-
-async function handleDeleteUser(context: Context, req: HttpRequest, userId: string): Promise<void> {
-  try {
-    // Verificar si el usuario existe
-    const existingUser = await db.findById<User>('nubestock.tb_mae_user', userId);
-    if (!existingUser) {
-      context.res = {
-        status: 404,
-        body: {
-          success: false,
-          message: 'Usuario no encontrado',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
-
-    // Soft delete
-    const success = await db.softDelete('nubestock.tb_mae_user', userId);
-
-    if (!success) {
-      context.res = {
-        status: 500,
-        body: {
-          success: false,
-          message: 'Error al eliminar usuario',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
-
-    context.res = {
-      status: 200,
-      body: {
-        success: true,
-        message: 'Usuario eliminado exitosamente',
-        timestamp: new Date().toISOString(),
-      },
-    };
-  } catch (error) {
-    logger.error('Error al eliminar usuario:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al eliminar usuario',
-        timestamp: new Date().toISOString(),
-      },
-    };
-  }
-}
 
 export default usersHandler;

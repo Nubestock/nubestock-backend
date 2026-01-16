@@ -12,8 +12,10 @@ local.settings.json
 .env
 .env.local
 .env.*.local
+.env.*
 # conservar ejemplos de env
 !.env.example
+!.env.template
 
 postman/*
 
@@ -48,12 +50,11 @@ jest-junit.xml
 
 # Caches
 .cache/
-.parcel-cache/
 .turbo/
 .vercel/
 
 # Editor / OS
-.vscode/
+
 .idea/
 *.suo
 *.ntvs_analysis.dat
@@ -62,11 +63,9 @@ jest-junit.xml
 *.swp
 *~
 .DS_Store
-Thumbs.db
 desktop.ini
 
 # VS Code workspace settings
-.vscode/*
 !.vscode/extensions.json
 
 # JetBrains
@@ -90,6 +89,13 @@ azure-pipelines/*
 bin/
 obj/
 *.funcpack
+
+# Azurite / storage emulators
+__azurite_db_*.json
+__azurite_db_*_extent__.json
+__blobstorage__/
+AzuriteConfig
+azurite.json
 
 # Misc
 Thumbs.db

@@ -1,59 +1,53 @@
 // Tipos base del sistema
 export interface BaseEntity {
-  id: string;
-  isactive: boolean;
-  creationdate: Date;
-  modificationdate?: Date;
+  id: number;
+  is_active: boolean;
+  creation_date: Date;
+  modification_date?: Date;
 }
 
 // Tipos de usuario
 export interface User extends BaseEntity {
-  iduser: string;
-  nameuser: string;
+  name: string;
   email: string;
-  passwordhash: string;
-  phone?: string;
-  last_login?: Date;
-  failed_login_attempts: number;
-  account_locked_until?: Date;
+  pwd_hash: string;
+  phone: string;
+  last_login: Date;
 }
 
 export interface UserRole extends BaseEntity {
-  iduser: string;
-  idrole: string;
-  assigned_by?: string;
-  assignment_reason?: string;
+  id_user: number;
+  id_role: number;
+  assigned_by: number;
+  assignment_reason: string;
 }
 
 export interface Role extends BaseEntity {
-  namerole: string;
-  description?: string;
+  name: string;
+  description: string;
 }
 
 export interface Permission extends BaseEntity {
-  namepermission: string;
-  description?: string;
+  name: string;
+  description: string;
   resource: string;
   action: string;
 }
 
 export interface RolePermission extends BaseEntity {
-  idrole: string;
-  idpermission: string;
+  id_role: number;
+  id_permission: number;
 }
 
 // Tipos de productos
 export interface Category extends BaseEntity {
-  namecategory: string;
-  idpcategory: string;
+  name: string;
 }
 
 export interface Origin extends BaseEntity {
-  idorigin: string;
-  nameorigin: string;
-  idfacility: string;
-  idprovince: string; // UUID foreign key to tb_mae_province
-  idcity?: string; // UUID foreign key to tb_mae_city
+  id_city: number;
+  name: string;
+  id_facility: string;
   // Optional: populated location info when using JOIN
   province_name?: string;
   city_name?: string;
@@ -62,87 +56,72 @@ export interface Origin extends BaseEntity {
   full_location?: string;
 }
 
-export interface Material extends BaseEntity {
-  material_name: string;
-  material_code: string;
-  material_type: 'raw' | 'packaging';
-  idorigin: string;
-  unit_of_measure: string;
-  cost_per_unit: number;
-  supplier?: string;
-  minimum_stock: number;
+export interface Measure extends BaseEntity {
+  name: string;
+  description: string;
 }
 
-export interface FinalProduct extends BaseEntity {
-  product_name: string;
-  idcategory: string;
-  idorigin: string;
-  description?: string;
+// Product unifica Material y FinalProduct
+export interface Product extends BaseEntity {
+  id_category: number;
+  id_origin: number;
+  id_measure: number;
+  name: string;
   sku: string;
-  unit_price: number;
+  type: 'MP' | 'PF'; // MP = Materia Prima, PF = Producto Final
+  min_stock: number;
+  quantity: number;
 }
 
-export interface ProductRecipe extends BaseEntity {
-  idfinal_product: string;
-  idmaterial: string;
+// Receta
+export interface Receipe extends BaseEntity {
+  id_product: number; // Solo Producto Final (type='PF')
+}
+
+export interface ProductReceipe extends BaseEntity {
+  id_receipe: number;
+  id_product: number; // Solo Materia Prima (type='MP')
 }
 
 // Tipos de operaciones
-export interface DailyProduction extends BaseEntity {
-  iduser: string;
-  idfinal_product: string;
-  production_date: Date;
-  quantity_produced: number;
-  unit_of_measure: string;
-  notes?: string;
-}
-
 export interface Transaction extends BaseEntity {
-  iduser: string;
-  idfinal_product?: string;
-  idmaterial?: string;
-  transaction_type: 'purchase' | 'production' | 'sale' | 'waste' | 'adjustment';
+  id_product: number;
+  id_user: number;
   quantity: number;
-  unit_of_measure: string;
-  unit_cost?: number;
-  total_cost?: number;
-  transaction_date: Date;
-  notes?: string;
+  type: 'IN' | 'OUT' | 'SAL' | 'PROD'; // IN=Ingreso, OUT=Salida no comercial, SAL=Venta, PROD=Producción
+  direction: '+' | '-';
 }
 
 // Tipos de ventas
 export interface Client extends BaseEntity {
-  client_name: string;
-  business_name: string;
-  ruc_cedula: string;
+  id_city: number;
+  id_province: number;
+  name: string;
+  identification: string;
+  identification_type: 'CED' | 'RUC';
   email: string;
-  phone?: string;
-  address?: string;
-  province?: string;
-  city?: string;
+  phone: string;
+  address: string;
   requires_credit: boolean;
   credit_limit?: number;
-  credit_days?: number;
+  credit_days: number;
 }
 
 export interface Sale extends BaseEntity {
-  idclient: string;
-  iduser?: string;
-  sale_date: Date;
+  id_client: number;
+  id_user: number;
+  sale_date?: Date;
   total_amount: number;
-  payment_status: 'pending' | 'paid' | 'overdue' | 'cancelled';
-  payment_method?: 'cash' | 'card' | 'credit' | 'transfer' | 'check' | 'other';
-  payment_due_date?: Date;
-  dispatch_guide?: string;
+  status: string; // 'pending' por defecto
+  method: 'cash' | 'card' | 'credit' | 'transfer' | 'check' | 'other';
+  due_date: Date;
+  dispatch_guide: string;
   notes?: string;
 }
 
 export interface SalesDetail extends BaseEntity {
-  idsale: string;
-  idfinal_product: string;
-  quantity: number;
-  unit_price: number;
-  total_price: number;
+  id_sales: number;
+  id_transaction: number;
 }
 
 // Tipos de alertas
@@ -150,60 +129,41 @@ export interface Alert extends BaseEntity {
   alert_type: string;
   alert_title: string;
   alert_message: string;
-  entity_type?: string;
-  entity_id?: string;
-  priority: 'low' | 'medium' | 'high' | 'critical';
-  status: 'active' | 'resolved' | 'dismissed';
+  entity_type: string;
+  priority: 'high' | 'medium' | 'low';
   due_date?: Date;
   resolved_at?: Date;
-  resolved_by?: string;
+  resolved_by: number;
 }
 
 // Tipos de maquinaria
 export interface Machinery extends BaseEntity {
-  machinery_name: string;
-  machinery_type: string;
-  maintenance_type: 'time_based' | 'mileage_based' | 'hours_based' | 'cycles_based';
+  name: string;
+  type: string;
+  maintenance_type: string;
   last_maintenance_value?: number;
   next_maintenance_value?: number;
   maintenance_unit?: string;
   maintenance_interval_value?: number;
-  alert_before_value?: number;
+  alert_before_value: number;
 }
 
-// Tipos de notificaciones
-export interface DeviceToken extends BaseEntity {
-  iduser: string;
-  device_token: string;
-  platform: 'ios' | 'android';
-  app_version?: string;
-  device_model?: string;
-  last_used: Date;
+// Tipos de ubicaciones
+export interface Country extends BaseEntity {
+  name: string;
+  is_code: string;
 }
 
-export interface Notification extends BaseEntity {
-  iduser: string;
-  idalert?: string;
-  notification_type: string;
-  title: string;
-  body: string;
-  data?: any;
-  status: 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
-  sent_at?: Date;
-  delivered_at?: Date;
-  read_at?: Date;
+export interface Province extends BaseEntity {
+  id_country: number;
+  name: string;
+  is_code: string;
 }
 
-// Tipos de logs
-export interface SystemLog extends BaseEntity {
-  iduser?: string;
-  log_type: 'user_action' | 'system_event' | 'error' | 'security';
-  action: string;
-  entity: string;
-  entity_id?: string;
-  before_state?: any;
-  after_state?: any;
-  log_message?: string;
+export interface City extends BaseEntity {
+  id_province: number;
+  name: string;
+  is_code: string;
 }
 
 // Tipos de respuesta de API
@@ -231,17 +191,17 @@ export interface LoginRequest {
 }
 
 export interface LoginResponse {
-  user: Omit<User, 'passwordhash'>;
+  user: Omit<User, 'pwd_hash'>;
   token: string;
   refreshToken: string;
   expiresIn: number;
 }
 
 export interface RegisterRequest {
-  nameuser: string;
+  name: string;
   email: string;
   password: string;
-  phone?: string;
+  phone: string;
 }
 
 // Tipos de filtros y consultas
@@ -257,20 +217,20 @@ export interface QueryFilters {
 export interface ProductionFilters extends QueryFilters {
   startDate?: Date;
   endDate?: Date;
-  iduser?: string;
-  idfinal_product?: string;
+  id_user?: number;
+  id_product?: number;
 }
 
 export interface SalesFilters extends QueryFilters {
   startDate?: Date;
   endDate?: Date;
-  idclient?: string;
-  payment_status?: string;
+  id_client?: number;
+  status?: string;
 }
 
 export interface InventoryFilters extends QueryFilters {
-  material_type?: string;
-  idorigin?: string;
+  type?: 'MP' | 'PF';
+  id_origin?: number;
   low_stock?: boolean;
 }
 
@@ -370,4 +330,8 @@ export interface NotificationConfig {
   apnsKeyId: string;
   apnsTeamId: string;
   apnsKeyPath: string;
+  notificationHubEnabled: boolean;
+  notificationHubConnectionString: string;
+  notificationHubName: string;
+  notificationHubInternalKey: string;
 }

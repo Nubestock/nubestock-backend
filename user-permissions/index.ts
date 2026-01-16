@@ -1,16 +1,80 @@
 import { AzureFunction, Context, HttpRequest } from '../src/types/azure-functions';
-import { Database } from '../src/config/database';
 import { logger } from '../src/config/logger';
+import { logErrorResponse } from '../src/utils/httpLogger';
 import { requireAuth } from '../src/middleware/authMiddleware';
-import Joi from 'joi';
+import * as userPermissionController from '../src/controllers/userPermissionController';
 
-const db = Database.getInstance();
+// Tipo para los handlers de rutas
+type Handler = (context: Context, req: HttpRequest, action?: string) => Promise<void>;
+
+// Helpers para respuestas comunes
+function badRequest(context: Context, message: string): void {
+  context.res = {
+    status: 400,
+    body: {
+      success: false,
+      message,
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
+
+function methodNotAllowed(context: Context): void {
+  context.res = {
+    status: 405,
+    body: {
+      success: false,
+      message: 'Método no permitido',
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
+
+// Wrappers para handlers que manejan lógica específica
+const getUserPermissionsHandler: Handler = async (ctx, req, action) => {
+  // Si hay action (userId), obtener permisos de ese usuario
+  // Si no hay action, obtener permisos del usuario autenticado
+  if (action) {
+    await userPermissionController.getUserPermissions(ctx, req, action);
+  } else {
+    const authResult = requireAuth(req);
+    if (authResult.success && authResult.user) {
+      await userPermissionController.getUserPermissions(ctx, req, authResult.user.userId);
+    } else {
+      badRequest(ctx, 'ID de usuario requerido');
+    }
+  }
+};
+
+const removeRoleHandler: Handler = async (ctx, req, action) => {
+  if (!action) {
+    badRequest(ctx, 'ID de usuario requerido');
+    return;
+  }
+  await userPermissionController.removeRole(ctx, req, action);
+};
+
+// Mapa de rutas por método HTTP
+const routes: Record<string, Record<string, Handler>> = {
+  GET: {
+    check: (ctx, req) => userPermissionController.checkPermission(ctx, req),
+    default: getUserPermissionsHandler,
+  },
+
+  POST: {
+    default: (ctx, req) => userPermissionController.assignRole(ctx, req),
+  },
+
+  DELETE: {
+    default: removeRoleHandler,
+  },
+};
 
 const userPermissionsHandler: AzureFunction = async (context: Context, req: HttpRequest): Promise<void> => {
   try {
     const { action } = req.params;
-    const method = req.method;
-    
+    const method = req.method || 'GET';
+
     logger.info('User permissions function triggered', {
       action,
       method,
@@ -31,45 +95,27 @@ const userPermissionsHandler: AzureFunction = async (context: Context, req: Http
       return;
     }
 
-    switch (method) {
-      case 'GET':
-        if (action === 'check') {
-          await handleCheckPermission(context, req);
-        } else if (action) {
-          await handleGetUserPermissions(context, req, action);
-        } else {
-          await handleGetUserPermissions(context, req, authResult.user!.userId);
-        }
-        break;
-      case 'POST':
-        await handleAssignRole(context, req);
-        break;
-      case 'DELETE':
-        if (action) {
-          await handleRemoveRole(context, req, action);
-        } else {
-          context.res = {
-            status: 400,
-            body: {
-              success: false,
-              message: 'ID de usuario requerido',
-              timestamp: new Date().toISOString(),
-            },
-          };
-        }
-        break;
-      default:
-        context.res = {
-          status: 405,
-          body: {
-            success: false,
-            message: 'Método no permitido',
-            timestamp: new Date().toISOString(),
-          },
-        };
+    // Resolver la ruta dinámicamente
+    const methodRoutes = routes[method];
+    if (!methodRoutes) {
+      methodNotAllowed(context);
+      return;
     }
+
+    // Buscar handler: primero por action, luego default
+    const handler = methodRoutes[action || ''] || methodRoutes.default;
+
+    if (!handler) {
+      methodNotAllowed(context);
+      return;
+    }
+
+    // Ejecutar el handler
+    await handler(context, req, action);
+
   } catch (error) {
     logger.error('Error en función de permisos de usuario:', error);
+    (context as any).__errorLogged = true;
     context.res = {
       status: 500,
       body: {
@@ -78,289 +124,9 @@ const userPermissionsHandler: AzureFunction = async (context: Context, req: Http
         timestamp: new Date().toISOString(),
       },
     };
+  } finally {
+    logErrorResponse(context, req, 'user-permissions');
   }
 };
-
-async function handleGetUserPermissions(context: Context, req: HttpRequest, userId: string): Promise<void> {
-  try {
-    // Obtener roles del usuario
-    const userRoles = await db.getConnection()
-      .select('r.*')
-      .from('nubestock.tb_mae_user_role as ur')
-      .join('nubestock.tb_mae_role as r', 'ur.idrole', 'r.idrole')
-      .where('ur.iduser', userId)
-      .where('ur.isactive', true)
-      .where('r.isactive', true);
-
-    // Obtener permisos del usuario (a través de sus roles)
-    const userPermissions = await db.getConnection()
-      .select('p.*')
-      .from('nubestock.tb_mae_user_role as ur')
-      .join('nubestock.tb_mae_role_permission as rp', 'ur.idrole', 'rp.idrole')
-      .join('nubestock.tb_mae_permission as p', 'rp.idpermission', 'p.idpermission')
-      .where('ur.iduser', userId)
-      .where('ur.isactive', true)
-      .where('rp.isactive', true)
-      .where('p.isactive', true)
-      .distinct();
-
-    context.res = {
-      status: 200,
-      body: {
-        success: true,
-        data: {
-          roles: userRoles,
-          permissions: userPermissions,
-        },
-        timestamp: new Date().toISOString(),
-      },
-    };
-  } catch (error) {
-    logger.error('Error al obtener permisos del usuario:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al obtener permisos del usuario',
-        timestamp: new Date().toISOString(),
-      },
-    };
-  }
-}
-
-async function handleCheckPermission(context: Context, req: HttpRequest): Promise<void> {
-  try {
-    const { userId, permission } = req.query;
-
-    if (!userId || !permission) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'userId y permission son requeridos',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
-
-    // Verificar si el usuario tiene el permiso específico
-    const hasPermission = await db.getConnection()
-      .select('p.idpermission')
-      .from('nubestock.tb_mae_user_role as ur')
-      .join('nubestock.tb_mae_role_permission as rp', 'ur.idrole', 'rp.idrole')
-      .join('nubestock.tb_mae_permission as p', 'rp.idpermission', 'p.idpermission')
-      .where('ur.iduser', userId)
-      .where('p.namepermission', permission)
-      .where('ur.isactive', true)
-      .where('rp.isactive', true)
-      .where('p.isactive', true)
-      .first();
-
-    context.res = {
-      status: 200,
-      body: {
-        success: true,
-        data: {
-          hasPermission: !!hasPermission,
-          permission,
-        },
-        timestamp: new Date().toISOString(),
-      },
-    };
-  } catch (error) {
-    logger.error('Error al verificar permiso:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al verificar permiso',
-        timestamp: new Date().toISOString(),
-      },
-    };
-  }
-}
-
-async function handleAssignRole(context: Context, req: HttpRequest): Promise<void> {
-  try {
-    // Obtener el usuario que está asignando el rol (del token JWT)
-    const authResult = requireAuth(req);
-    if (!authResult.success) {
-      context.res = {
-        status: 401,
-        body: {
-          success: false,
-          message: authResult.error || 'Usuario no autenticado',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
-    const assignedBy = authResult.user!.userId;
-
-    // Validar el body
-    const assignRoleSchema = Joi.object({
-      userId: Joi.string().uuid().required(),
-      roleId: Joi.string().uuid().required(),
-      assignment_reason: Joi.string().min(3).max(500).required(),
-    });
-
-    const { error, value } = assignRoleSchema.validate(req.body);
-    
-    if (error) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'Datos de entrada inválidos',
-          errors: error.details.map(detail => ({
-            field: detail.path.join('.'),
-            message: detail.message,
-          })),
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
-
-    const { userId, roleId, assignment_reason } = value;
-
-    // Verificar si el usuario existe
-    const user = await db.findById('nubestock.tb_mae_user', userId);
-    if (!user) {
-      context.res = {
-        status: 404,
-        body: {
-          success: false,
-          message: 'Usuario no encontrado',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
-
-    // Verificar si el rol existe
-    const role = await db.findById('nubestock.tb_mae_role', roleId);
-    if (!role) {
-      context.res = {
-        status: 404,
-        body: {
-          success: false,
-          message: 'Rol no encontrado',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
-
-    // Verificar si ya tiene el rol asignado
-    const existingAssignment = await db.getConnection()
-      .select('iduserrole')
-      .from('nubestock.tb_mae_user_role')
-      .where('iduser', userId)
-      .where('idrole', roleId)
-      .first();
-
-    if (existingAssignment) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'El usuario ya tiene este rol asignado',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
-
-    // Asignar el rol
-    const newAssignment = await db.create('nubestock.tb_mae_user_role', {
-      iduser: userId,
-      idrole: roleId,
-      assigned_by: assignedBy,
-      assignment_reason: assignment_reason,
-      isactive: true,
-    });
-
-    context.res = {
-      status: 201,
-      body: {
-        success: true,
-        data: newAssignment,
-        message: 'Rol asignado exitosamente',
-        timestamp: new Date().toISOString(),
-      },
-    };
-  } catch (error) {
-    logger.error('Error al asignar rol:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al asignar rol',
-        timestamp: new Date().toISOString(),
-      },
-    };
-  }
-}
-
-async function handleRemoveRole(context: Context, req: HttpRequest, userId: string): Promise<void> {
-  try {
-    const { roleId } = req.body;
-
-    if (!roleId) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'roleId es requerido',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
-
-    // Desactivar la asignación de rol
-    const result = await db.getConnection()
-      .from('nubestock.tb_mae_user_role')
-      .where('iduser', userId)
-      .where('idrole', roleId)
-      .update({
-        isactive: false,
-        modificationdate: new Date(),
-      });
-
-    if (result === 0) {
-      context.res = {
-        status: 404,
-        body: {
-          success: false,
-          message: 'Asignación de rol no encontrada',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
-
-    context.res = {
-      status: 200,
-      body: {
-        success: true,
-        message: 'Rol removido exitosamente',
-        timestamp: new Date().toISOString(),
-      },
-    };
-  } catch (error) {
-    logger.error('Error al remover rol:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al remover rol',
-        timestamp: new Date().toISOString(),
-      },
-    };
-  }
-}
 
 export default userPermissionsHandler;

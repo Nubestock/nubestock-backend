@@ -1,0 +1,11 @@
+{
+  "bindings": [
+    {
+      "name": "timer",
+      "type": "timerTrigger",
+      "direction": "in",
+      "schedule": "0 */10 * * * *"
+    }
+  ],
+  "scriptFile": "../dist/machinery-alerts-dispatch-timer/index.js"
+}

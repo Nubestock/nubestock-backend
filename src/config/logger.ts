@@ -27,15 +27,13 @@ const consoleFormat = winston.format.combine(
 // Configuración de transportes
 const transports: winston.transport[] = [];
 
-// Consola (solo en desarrollo)
-if (config.server.environment === 'development') {
-  transports.push(
-    new winston.transports.Console({
-      format: consoleFormat,
-      level: config.logging.level,
-    })
-  );
-}
+// Consola (siempre, para ver logs en Azure Functions)
+transports.push(
+  new winston.transports.Console({
+    format: config.logging.format === 'json' ? logFormat : consoleFormat,
+    level: config.logging.level,
+  })
+);
 
 // Archivo (en todos los entornos)
 transports.push(
@@ -60,22 +58,6 @@ export const logger = winston.createLogger({
   format: logFormat,
   transports,
   exitOnError: false,
-});
-
-// Logger específico para base de datos
-export const dbLogger = winston.createLogger({
-  level: 'info',
-  format: winston.format.combine(
-    winston.format.timestamp(),
-    winston.format.json()
-  ),
-  transports: [
-    new winston.transports.File({
-      filename: 'logs/database.log',
-      maxsize: 5242880, // 5MB
-      maxFiles: 3,
-    }),
-  ],
 });
 
 // Logger específico para auditoría

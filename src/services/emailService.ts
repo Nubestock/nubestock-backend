@@ -1,13 +1,7 @@
 import { EmailClient } from '@azure/communication-email';
 import { config } from '../config/environment';
 import { logger } from '../config/logger';
-
-export interface EmailOptions {
-  to: string;
-  subject: string;
-  html: string;
-  text?: string;
-}
+import { EmailOptions } from '../interfaces';
 
 export class EmailService {
   private emailClient: EmailClient | null = null;
@@ -78,6 +72,101 @@ export class EmailService {
       logger.error('Error sending email via Azure Communication Services:', error);
       throw error;
     }
+  }
+
+  /**
+   * Envía un correo de bienvenida con la contraseña por defecto
+   */
+  async sendWelcomeEmail(
+    userEmail: string,
+    userName: string,
+    defaultPassword: string
+  ): Promise<boolean> {
+    const loginUrl = `${config.app.frontendUrl}/login`;
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Bienvenido a Nubestock</title>
+      </head>
+      <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+          <h1 style="color: #2c3e50; margin-top: 0;">¡Bienvenido a Nubestock!</h1>
+        </div>
+        
+        <p>Hola <strong>${userName}</strong>,</p>
+        
+        <p>Tu cuenta ha sido creada exitosamente en el sistema Nubestock. A continuación encontrarás tus credenciales de acceso:</p>
+        
+        <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; border-radius: 4px;">
+          <p style="margin: 0 0 10px 0;"><strong>📧 Email:</strong> ${userEmail}</p>
+          <p style="margin: 0;"><strong>🔑 Contraseña temporal:</strong> <code style="background-color: #f8f9fa; padding: 4px 8px; border-radius: 3px; font-size: 14px;">${defaultPassword}</code></p>
+        </div>
+        
+        <p><strong>⚠️ IMPORTANTE - Seguridad:</strong></p>
+        <ul>
+          <li>Esta es una contraseña temporal. <strong style="color: #dc3545;">Debes cambiarla inmediatamente</strong> después de tu primer inicio de sesión.</li>
+          <li>No compartas tus credenciales con nadie.</li>
+          <li>Utiliza una contraseña segura que incluya letras, números y caracteres especiales.</li>
+        </ul>
+        
+        <p>Para iniciar sesión, visita:</p>
+        
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${loginUrl}" 
+             style="background-color: #28a745; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">
+            Iniciar Sesión
+          </a>
+        </div>
+        
+        <p>O copia y pega el siguiente enlace en tu navegador:</p>
+        <p style="background-color: #f8f9fa; padding: 10px; border-radius: 4px; word-break: break-all; font-size: 12px;">
+          ${loginUrl}
+        </p>
+        
+        <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
+        
+        <p style="color: #7f8c8d; font-size: 12px;">
+          Este es un correo automático, por favor no respondas a este mensaje.<br>
+          Si tienes alguna pregunta, contacta al administrador del sistema.<br>
+          © ${new Date().getFullYear()} Nubestock. Todos los derechos reservados.
+        </p>
+      </body>
+      </html>
+    `;
+
+    const text = `
+¡Bienvenido a Nubestock!
+
+Hola ${userName},
+
+Tu cuenta ha sido creada exitosamente en el sistema Nubestock. A continuación encontrarás tus credenciales de acceso:
+
+📧 Email: ${userEmail}
+🔑 Contraseña temporal: ${defaultPassword}
+
+⚠️ IMPORTANTE - Seguridad:
+- Esta es una contraseña temporal. DEBES CAMBIARLA INMEDIATAMENTE después de tu primer inicio de sesión.
+- No compartas tus credenciales con nadie.
+- Utiliza una contraseña segura que incluya letras, números y caracteres especiales.
+
+Para iniciar sesión, visita:
+${loginUrl}
+
+Este es un correo automático, por favor no respondas a este mensaje.
+Si tienes alguna pregunta, contacta al administrador del sistema.
+© ${new Date().getFullYear()} Nubestock. Todos los derechos reservados.
+    `;
+
+    return this.sendEmail({
+      to: userEmail,
+      subject: 'Bienvenido a Nubestock - Credenciales de Acceso',
+      html,
+      text,
+    });
   }
 
   /**

@@ -43,6 +43,10 @@ export const config = {
     apnsKeyId: process.env.APNS_KEY_ID || '',
     apnsTeamId: process.env.APNS_TEAM_ID || '',
     apnsKeyPath: process.env.APNS_KEY_PATH || '',
+    notificationHubEnabled: process.env.NOTIFICATION_HUB_ENABLED === 'true',
+    notificationHubConnectionString: process.env.NOTIFICATION_HUB_CONNECTION_STRING || '',
+    notificationHubName: process.env.NOTIFICATION_HUB_NAME || '',
+    notificationHubInternalKey: process.env.NOTIFICATION_HUB_INTERNAL_KEY || '',
   },
 
   // Configuración de alertas
@@ -54,7 +58,7 @@ export const config = {
 
   // Configuración de logging
   logging: {
-    level: process.env.LOG_LEVEL || 'info',
+    level: process.env.LOG_LEVEL || 'debug',
     format: process.env.LOG_FORMAT || 'json',
     file: process.env.LOG_FILE || 'logs/app.log',
   },
@@ -69,16 +73,17 @@ export const config = {
 
   // Configuración de rate limiting
   rateLimit: {
-    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'), // 15 minutos
-    max: parseInt(process.env.RATE_LIMIT_MAX || '100'), // 100 requests por ventana
+    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'),
+    max: parseInt(process.env.RATE_LIMIT_MAX || '100'),
   },
 
   // Configuración de seguridad
   security: {
     bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS || '12'),
     maxLoginAttempts: parseInt(process.env.MAX_LOGIN_ATTEMPTS || '5'),
-    lockoutDuration: parseInt(process.env.LOCKOUT_DURATION || '300000'), // 5 minutos
-    passwordResetTokenExpiry: parseInt(process.env.PASSWORD_RESET_TOKEN_EXPIRY || '3600000'), // 1 hora en ms
+    lockoutDuration: parseInt(process.env.LOCKOUT_DURATION || '300000'),
+    passwordResetTokenExpiry: parseInt(process.env.PASSWORD_RESET_TOKEN_EXPIRY || '3600000'),
+    bootstrapKey: process.env.BOOTSTRAP_KEY || '',
   },
 
   // Configuración de email (Azure Communication Services)

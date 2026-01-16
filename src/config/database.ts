@@ -3,62 +3,6 @@ import { config } from './environment';
 import { logger } from './logger';
 import './loadEnv'; // Cargar variables de entorno al inicio
 
-const extractTableName = (table: string): string => {
-  if (!table) return table;
-  const parts = table.split('.');
-  return parts[parts.length - 1];
-};
-
-const getIdColumnForTable = (table: string): string => {
-  const tableName = extractTableName(table);
-  switch (tableName) {
-    case 'tb_mae_user':
-      return 'iduser';
-    case 'tb_mae_role':
-      return 'idrole';
-    case 'tb_mae_permission':
-      return 'idpermission';
-    case 'tb_mae_user_role':
-      return 'iduserrole';
-    case 'tb_mae_role_permission':
-      return 'idrolepermission';
-    case 'tb_ope_availability':
-      return 'idavailability';
-    case 'tb_ope_transaction':
-      return 'idtransaction';
-    case 'tb_ope_daily_production':
-      return 'iddaily_production';
-    case 'tb_mae_final_product':
-      return 'idfinal_product';
-    case 'tb_mae_device_token':
-      return 'iddevice_token';
-    case 'tb_mae_alert':
-      return 'idalert';
-    case 'tb_mae_client':
-      return 'idclient';
-    case 'tb_mae_country':
-      return 'idcountry';
-    case 'tb_mae_province':
-      return 'idprovince';
-    case 'tb_mae_city':
-      return 'idcity';
-    case 'tb_ope_sales':
-      return 'idsale';
-    case 'tb_ope_sales_detail':
-      return 'idsales_detail';
-    case 'tb_mae_product_recipe':
-      return 'idrecipe';
-    case 'tb_mae_material':
-      return 'idmaterial';
-    case 'tb_mae_category':
-      return 'idcategory';
-    case 'tb_mae_origin':
-      return 'idorigin';
-    default:
-      return 'id';
-  }
-};
-
 export class Database {
   private static instance: Database;
   private connection: Knex;
@@ -94,7 +38,7 @@ export class Database {
       },
       // Agregar manejo de errores a nivel de pool
       asyncStackTraces: true,
-      debug: config.server.environment === 'development',
+      debug: false, // Desactivado para no loguear queries
       migrations: {
         directory: './src/migrations',
         tableName: 'knex_migrations',
@@ -148,13 +92,12 @@ export class Database {
   // Métodos de utilidad para consultas comunes
   public async findById<T>(
     table: string,
-    id: string,
+    id: string | number,
     columns: string[] = ['*']
   ): Promise<T | null> {
-    const idColumn = getIdColumnForTable(table);
     const result = await this.connection(table)
       .select(columns)
-      .where(idColumn, id)
+      .where('id', id)
       .first();
     return result || null;
   }
@@ -187,12 +130,11 @@ export class Database {
 
   public async update<T>(
     table: string,
-    id: string,
+    id: string | number,
     data: Partial<T>
   ): Promise<T | null> {
-    const idColumn = getIdColumnForTable(table);
     const [result] = await this.connection(table)
-      .where(idColumn, id)
+      .where('id', id)
       .update(data)
       .returning('*');
     return result || null;
@@ -200,25 +142,23 @@ export class Database {
 
   public async delete(
     table: string,
-    id: string
+    id: string | number
   ): Promise<boolean> {
-    const idColumn = getIdColumnForTable(table);
     const result = await this.connection(table)
-      .where(idColumn, id)
+      .where('id', id)
       .del();
     return result > 0;
   }
 
   public async softDelete(
     table: string,
-    id: string
+    id: string | number
   ): Promise<boolean> {
-    const idColumn = getIdColumnForTable(table);
     const result = await this.connection(table)
-      .where(idColumn, id)
+      .where('id', id)
       .update({
-        isactive: false,
-        modificationdate: new Date()
+        is_active: false,
+        modification_date: new Date()
       });
     return result > 0;
   }

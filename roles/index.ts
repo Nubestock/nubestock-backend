@@ -1,42 +1,120 @@
 import { AzureFunction, Context, HttpRequest } from '../src/types/azure-functions';
-import { Database } from '../src/config/database';
 import { logger } from '../src/config/logger';
-import { requireAuth, requireAdmin, requireAnyPermission } from '../src/middleware/authMiddleware';
+import { logErrorResponse } from '../src/utils/httpLogger';
+import { requireAuth, requireAnyPermission } from '../src/middleware/authMiddleware';
+import { config } from '../src/config/environment';
+import * as roleController from '../src/controllers/roleController';
+import * as permissionController from '../src/controllers/permissionController';
 
-const db = Database.getInstance();
+// Tipo para los handlers de rutas
+type Handler = (context: Context, req: HttpRequest, action?: string) => Promise<void>;
+
+// Función helper para verificar bootstrap mode
+function isBootstrapMode(req: HttpRequest): boolean {
+  const headers = req.headers || {};
+  const bootstrapKeyHeader = Object.keys(headers).find(
+    key => key.toLowerCase() === 'x-bootstrap-key'
+  );
+  const providedBootstrapKey = bootstrapKeyHeader ? headers[bootstrapKeyHeader] : null;
+  return config.security.bootstrapKey && 
+         config.security.bootstrapKey !== '' &&
+         providedBootstrapKey === config.security.bootstrapKey;
+}
+
+// Helpers para respuestas comunes
+function badRequest(context: Context, message: string): void {
+  context.res = {
+    status: 400,
+    body: {
+      success: false,
+      message,
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
+
+function methodNotAllowed(context: Context): void {
+  context.res = {
+    status: 405,
+    body: {
+      success: false,
+      message: 'Método no permitido',
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
+
+// Wrappers para handlers que requieren validación de ID
+const getRoleHandler: Handler = async (ctx, req, action) => {
+  if (action) {
+    await roleController.getRole(ctx, req, action);
+  } else {
+    await roleController.listRoles(ctx, req);
+  }
+};
+
+const updateRoleHandler: Handler = async (ctx, req, action) => {
+  if (!action) {
+    badRequest(ctx, 'ID de rol requerido');
+    return;
+  }
+  await roleController.updateRole(ctx, req, action);
+};
+
+const deleteRoleHandler: Handler = async (ctx, req, action) => {
+  if (!action) {
+    badRequest(ctx, 'ID de rol requerido');
+    return;
+  }
+  await roleController.deleteRole(ctx, req, action);
+};
+
+// Permisos requeridos por método HTTP
+const methodPermissions: Record<string, string[]> = {
+  GET: ['roles_read', 'users_manage', 'admin'],
+  POST: ['roles_write', 'users_manage', 'admin'],
+  PUT: ['roles_write', 'users_manage', 'admin'],
+  DELETE: ['roles_write', 'users_manage', 'admin'],
+};
+
+// Mapa de rutas por método HTTP
+const routes: Record<string, Record<string, Handler>> = {
+  GET: {
+    permissions: (ctx, req) => permissionController.getPermissions(ctx, req),
+    all: (ctx, req) => roleController.getAllRolesWithPermissions(ctx, req),
+    default: getRoleHandler,
+  },
+
+  POST: {
+    permissions: (ctx, req) => permissionController.createPermission(ctx, req),
+    default: (ctx, req) => roleController.createRole(ctx, req),
+  },
+
+  PUT: {
+    default: updateRoleHandler,
+  },
+
+  DELETE: {
+    default: deleteRoleHandler,
+  },
+};
 
 const rolesHandler: AzureFunction = async (context: Context, req: HttpRequest): Promise<void> => {
   try {
     const { action } = req.params;
-    const method = req.method;
-    
+    const method = req.method || 'GET';
+
     logger.info('Roles function triggered', {
       action,
       method,
       url: req.url,
     });
 
-    // Verificar autenticación y permisos (roles requiere permisos de administrador)
-    let authResult: { success: boolean; user?: any; error?: string };
-    
-    switch (method) {
-      case 'GET':
-        // GET requiere permiso de lectura de roles (admin o users_manage)
-        authResult = requireAnyPermission(req, ['roles_read', 'users_manage', 'admin']);
-        break;
-      case 'POST':
-      case 'PUT':
-      case 'DELETE':
-        // POST/PUT/DELETE requiere permisos de administrador
-        authResult = requireAnyPermission(req, ['roles_write', 'users_manage', 'admin']);
-        break;
-      default:
-        authResult = requireAuth(req);
-    }
-
+    // Verificar autenticación
+    const authResult = requireAuth(req);
     if (!authResult.success) {
       context.res = {
-        status: authResult.error?.includes('permisos') ? 403 : 401,
+        status: 401,
         body: {
           success: false,
           message: authResult.error || 'Usuario no autenticado',
@@ -46,61 +124,57 @@ const rolesHandler: AzureFunction = async (context: Context, req: HttpRequest): 
       return;
     }
 
-    switch (method) {
-      case 'GET':
-        if (action === 'permissions') {
-          await handleGetPermissions(context, req);
-        } else if (action === 'all') {
-          await handleGetAllRolesWithPermissions(context, req);
-        } else if (action) {
-          await handleGetRole(context, req, action);
-        } else {
-          await handleListRoles(context, req);
-        }
-        break;
-      case 'POST':
-        await handleCreateRole(context, req);
-        break;
-      case 'PUT':
-        if (action) {
-          await handleUpdateRole(context, req, action);
-        } else {
+    // Verificar bypass flag para inicialización del sistema
+    const bootstrapMode = isBootstrapMode(req);
+
+    // Si NO está en modo bootstrap, verificar permisos según el método
+    if (!bootstrapMode) {
+      const requiredPermissions = methodPermissions[method];
+      if (requiredPermissions) {
+        const permissionResult = requireAnyPermission(req, requiredPermissions);
+        if (!permissionResult.success) {
           context.res = {
-            status: 400,
+            status: 403,
             body: {
               success: false,
-              message: 'ID de rol requerido',
+              message: permissionResult.error || 'No tienes permisos para realizar esta acción',
               timestamp: new Date().toISOString(),
             },
           };
+          return;
         }
-        break;
-      case 'DELETE':
-        if (action) {
-          await handleDeleteRole(context, req, action);
-        } else {
-          context.res = {
-            status: 400,
-            body: {
-              success: false,
-              message: 'ID de rol requerido',
-              timestamp: new Date().toISOString(),
-            },
-          };
-        }
-        break;
-      default:
-        context.res = {
-          status: 405,
-          body: {
-            success: false,
-            message: 'Método no permitido',
-            timestamp: new Date().toISOString(),
-          },
-        };
+      }
+    } else {
+      // Log de seguridad cuando se usa el bypass
+      logger.warn('Bootstrap mode activado para gestión de roles', {
+        userId: authResult.user!.userId,
+        userEmail: authResult.user!.userEmail,
+        method: method,
+        timestamp: new Date().toISOString(),
+      });
     }
+
+    // Resolver la ruta dinámicamente
+    const methodRoutes = routes[method];
+    if (!methodRoutes) {
+      methodNotAllowed(context);
+      return;
+    }
+
+    // Buscar handler: primero por action, luego default
+    const handler = methodRoutes[action || ''] || methodRoutes.default;
+
+    if (!handler) {
+      methodNotAllowed(context);
+      return;
+    }
+
+    // Ejecutar el handler
+    await handler(context, req, action);
+
   } catch (error) {
     logger.error('Error en función de roles:', error);
+    (context as any).__errorLogged = true;
     context.res = {
       status: 500,
       body: {
@@ -109,353 +183,9 @@ const rolesHandler: AzureFunction = async (context: Context, req: HttpRequest): 
         timestamp: new Date().toISOString(),
       },
     };
+  } finally {
+    logErrorResponse(context, req, 'roles');
   }
 };
-
-async function handleListRoles(context: Context, req: HttpRequest): Promise<void> {
-  try {
-    const roles = await db.getConnection()
-      .select('*')
-      .from('nubestock.tb_mae_role')
-      .where('isactive', true)
-      .orderBy('namerole');
-
-    context.res = {
-      status: 200,
-      body: {
-        success: true,
-        data: roles,
-        timestamp: new Date().toISOString(),
-      },
-    };
-  } catch (error) {
-    logger.error('Error al listar roles:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al listar roles',
-        timestamp: new Date().toISOString(),
-      },
-    };
-  }
-}
-
-async function handleGetAllRolesWithPermissions(context: Context, req: HttpRequest): Promise<void> {
-  try {
-    // Obtener todos los roles activos
-    const roles = await db.getConnection()
-      .select('*')
-      .from('nubestock.tb_mae_role')
-      .where('isactive', true)
-      .orderBy('namerole');
-
-    // Para cada rol, obtener sus permisos
-    const rolesWithPermissions = await Promise.all(
-      roles.map(async (role: any) => {
-        const permissions = await db.getConnection()
-          .select('p.*')
-          .from('nubestock.tb_mae_role_permission as rp')
-          .join('nubestock.tb_mae_permission as p', 'rp.idpermission', 'p.idpermission')
-          .where('rp.idrole', role.idrole)
-          .where('rp.isactive', true)
-          .where('p.isactive', true)
-          .orderBy('p.namepermission');
-
-        return {
-          ...role,
-          permissions: permissions || [],
-          permissionsCount: permissions?.length || 0,
-        };
-      })
-    );
-
-    // También obtener todos los permisos disponibles para referencia
-    const allPermissions = await db.getConnection()
-      .select('*')
-      .from('nubestock.tb_mae_permission')
-      .where('isactive', true)
-      .orderBy('namepermission');
-
-    context.res = {
-      status: 200,
-      body: {
-        success: true,
-        data: {
-          roles: rolesWithPermissions,
-          totalRoles: rolesWithPermissions.length,
-          allPermissions: allPermissions,
-          totalPermissions: allPermissions.length,
-        },
-        timestamp: new Date().toISOString(),
-      },
-    };
-  } catch (error) {
-    logger.error('Error al obtener roles con permisos:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al obtener roles con permisos',
-        timestamp: new Date().toISOString(),
-      },
-    };
-  }
-}
-
-async function handleGetRole(context: Context, req: HttpRequest, roleId: string): Promise<void> {
-  try {
-    const role = await db.findById('nubestock.tb_mae_role', roleId);
-
-    if (!role) {
-      context.res = {
-        status: 404,
-        body: {
-          success: false,
-          message: 'Rol no encontrado',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
-
-    // Obtener permisos del rol
-    const permissions = await db.getConnection()
-      .select('p.*')
-      .from('nubestock.tb_mae_role_permission as rp')
-      .join('nubestock.tb_mae_permission as p', 'rp.idpermission', 'p.idpermission')
-      .where('rp.idrole', roleId)
-      .where('rp.isactive', true)
-      .where('p.isactive', true);
-
-    context.res = {
-      status: 200,
-      body: {
-        success: true,
-        data: { 
-          ...(role as any), 
-          permissions: permissions || [] 
-        },
-        timestamp: new Date().toISOString(),
-      },
-    };
-  } catch (error) {
-    logger.error('Error al obtener rol:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al obtener rol',
-        timestamp: new Date().toISOString(),
-      },
-    };
-  }
-}
-
-async function handleGetPermissions(context: Context, req: HttpRequest): Promise<void> {
-  try {
-    const permissions = await db.getConnection()
-      .select('*')
-      .from('nubestock.tb_mae_permission')
-      .where('isactive', true)
-      .orderBy('namepermission');
-
-    context.res = {
-      status: 200,
-      body: {
-        success: true,
-        data: permissions,
-        timestamp: new Date().toISOString(),
-      },
-    };
-  } catch (error) {
-    logger.error('Error al obtener permisos:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al obtener permisos',
-        timestamp: new Date().toISOString(),
-      },
-    };
-  }
-}
-
-async function handleCreateRole(context: Context, req: HttpRequest): Promise<void> {
-  try {
-    const { namerole, description, permissions } = req.body;
-
-    if (!namerole) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'Nombre del rol es requerido',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
-
-    // Verificar si el rol ya existe
-    const existingRole = await db.getConnection()
-      .select('idrole')
-      .from('nubestock.tb_mae_role')
-      .where('namerole', namerole)
-      .first();
-
-    if (existingRole) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'El rol ya existe',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
-
-    // Crear el rol
-    const newRole = await db.create('nubestock.tb_mae_role', {
-      namerole,
-      description,
-      isactive: true,
-    });
-
-    // Asignar permisos si se proporcionan
-    if (permissions && Array.isArray(permissions)) {
-      for (const permissionId of permissions) {
-        await db.create('nubestock.tb_mae_role_permission', {
-          idrole: (newRole as any).idrole,
-          idpermission: permissionId,
-          isactive: true,
-        });
-      }
-    }
-
-    context.res = {
-      status: 201,
-      body: {
-        success: true,
-        data: newRole,
-        message: 'Rol creado exitosamente',
-        timestamp: new Date().toISOString(),
-      },
-    };
-  } catch (error) {
-    logger.error('Error al crear rol:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al crear rol',
-        timestamp: new Date().toISOString(),
-      },
-    };
-  }
-}
-
-async function handleUpdateRole(context: Context, req: HttpRequest, roleId: string): Promise<void> {
-  try {
-    const { namerole, description, permissions } = req.body;
-
-    const existingRole = await db.findById('nubestock.tb_mae_role', roleId);
-    if (!existingRole) {
-      context.res = {
-        status: 404,
-        body: {
-          success: false,
-          message: 'Rol no encontrado',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
-
-    // Actualizar el rol
-    const updatedRole = await db.update('nubestock.tb_mae_role', roleId, {
-      namerole,
-      description,
-      modificationdate: new Date(),
-    });
-
-    // Actualizar permisos si se proporcionan
-    if (permissions && Array.isArray(permissions)) {
-      // Eliminar permisos existentes
-      await db.getConnection()
-        .from('nubestock.tb_mae_role_permission')
-        .where('idrole', roleId)
-        .del();
-
-      // Agregar nuevos permisos
-      for (const permissionId of permissions) {
-        await db.create('nubestock.tb_mae_role_permission', {
-          idrole: roleId,
-          idpermission: permissionId,
-          isactive: true,
-        });
-      }
-    }
-
-    context.res = {
-      status: 200,
-      body: {
-        success: true,
-        data: updatedRole,
-        message: 'Rol actualizado exitosamente',
-        timestamp: new Date().toISOString(),
-      },
-    };
-  } catch (error) {
-    logger.error('Error al actualizar rol:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al actualizar rol',
-        timestamp: new Date().toISOString(),
-      },
-    };
-  }
-}
-
-async function handleDeleteRole(context: Context, req: HttpRequest, roleId: string): Promise<void> {
-  try {
-    const deletedRole = await db.softDelete('nubestock.tb_mae_role', roleId);
-
-    if (!deletedRole) {
-      context.res = {
-        status: 404,
-        body: {
-          success: false,
-          message: 'Rol no encontrado',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
-
-    context.res = {
-      status: 200,
-      body: {
-        success: true,
-        data: deletedRole,
-        message: 'Rol eliminado exitosamente',
-        timestamp: new Date().toISOString(),
-      },
-    };
-  } catch (error) {
-    logger.error('Error al eliminar rol:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al eliminar rol',
-        timestamp: new Date().toISOString(),
-      },
-    };
-  }
-}
 
 export default rolesHandler;
