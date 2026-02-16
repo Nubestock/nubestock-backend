@@ -19,20 +19,20 @@
 
 ---
 
-## 🚀 Descripción
+## Descripción
 
 **Nubestock Backend** es una API RESTful construida con **Azure Functions** y **TypeScript** que centraliza la gestión integral de inventario, producción, ventas y alertas para empresas productoras de snacks. El sistema está diseñado siguiendo principios de arquitectura modular y separación de responsabilidades.
 
 ### Características Principales
 
-- ✅ **Serverless Architecture** - Despliegue en Azure Functions
-- ✅ **Autenticación JWT** - Sistema robusto de autenticación y autorización
-- ✅ **Gestión de Inventario** - Control completo de productos y materiales
-- ✅ **Producción** - Registro y seguimiento de producción diaria
-- ✅ **Ventas** - Gestión de clientes, ventas y pagos
-- ✅ **Sistema de Alertas** - Notificaciones automáticas de stock bajo, mantenimiento, etc.
-- ✅ **Reportes y Estadísticas** - Análisis detallado de operaciones
-- ✅ **Multi-tenant** - Soporte para múltiples orígenes/ubicaciones
+- **Serverless Architecture** - Despliegue en Azure Functions
+- **Autenticación JWT** - Sistema robusto de autenticación y autorización
+- **Gestión de Inventario** - Control completo de productos y materiales
+- **Producción** - Registro y seguimiento de producción diaria
+- **Ventas** - Gestión de clientes, ventas y pagos
+- **Sistema de Alertas** - Notificaciones automáticas de stock bajo, mantenimiento, etc.
+- **Reportes y Estadísticas** - Análisis detallado de operaciones
+- **Multi-tenant** - Soporte para múltiples orígenes/ubicaciones
 
 ---
 
@@ -148,7 +148,7 @@ graph TD
 
 ---
 
-## 📁 Estructura del Proyecto
+## Estructura del Proyecto
 
 ```
 nubestock-backend/
@@ -245,7 +245,7 @@ nubestock-backend/
 
 ---
 
-## 🚀 Instalación y Configuración
+## Instalación y Configuración
 
 ### Prerrequisitos
 
@@ -315,7 +315,7 @@ La documentación técnica completa está disponible en la carpeta [`/docs`](./d
 
 ---
 
-## 📡 API Endpoints
+## API Endpoints
 
 ### Base URL
 
@@ -395,7 +395,7 @@ La documentación técnica completa está disponible en la carpeta [`/docs`](./d
 
 ---
 
-## 🔐 Autenticación y Autorización
+## Autenticación y Autorización
 
 ### Flujo de Autenticación
 
@@ -453,24 +453,24 @@ El sistema utiliza PostgreSQL con un esquema dedicado. Las tablas principales in
 
 ---
 
-## 🔒 Seguridad
+## Seguridad
 
 ### Medidas Implementadas
 
-- ✅ **JWT Authentication** - Tokens firmados y con expiración
-- ✅ **Password Hashing** - bcrypt con 12 rounds
-- ✅ **CORS** - Configuración restrictiva
-- ✅ **Rate Limiting** - Protección contra abuso
-- ✅ **Input Validation** - Validación con Joi
-- ✅ **SQL Injection Protection** - Knex.js con parámetros preparados
-- ✅ **HTTPS** - Encriptación en tránsito (Azure)
-- ✅ **Environment Variables** - Secretos fuera del código
+- **JWT Authentication** - Tokens firmados y con expiración
+- **Password Hashing** - bcrypt con 12 rounds
+- **CORS** - Configuración restrictiva
+- **Rate Limiting** - Protección contra abuso
+- **Input Validation** - Validación con Joi
+- **SQL Injection Protection** - Knex.js con parámetros preparados
+- **HTTPS** - Encriptación en tránsito (Azure)
+- **Environment Variables** - Secretos fuera del código
 
 > **Nota**: Ver [`docs/Seguridad.md`](./docs/Seguridad.md) para configuración detallada
 
 ---
 
-## 🚀 Despliegue
+## Despliegue
 
 ### Desarrollo Local
 
@@ -514,7 +514,7 @@ npm run test:watch
 
 ---
 
-## 📝 Logging
+## Logging
 
 El sistema utiliza **Winston** para logging estructurado:
 
@@ -534,7 +534,7 @@ El sistema utiliza **Winston** para logging estructurado:
 
 ---
 
-## 📄 Licencia
+## Licencia
 
 Este proyecto está bajo la Licencia MIT.
 

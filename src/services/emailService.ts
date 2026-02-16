@@ -103,10 +103,10 @@ export class EmailService {
         
         <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; border-radius: 4px;">
           <p style="margin: 0 0 10px 0;"><strong>📧 Email:</strong> ${userEmail}</p>
-          <p style="margin: 0;"><strong>🔑 Contraseña temporal:</strong> <code style="background-color: #f8f9fa; padding: 4px 8px; border-radius: 3px; font-size: 14px;">${defaultPassword}</code></p>
+          <p style="margin: 0;"><strong>Contraseña temporal:</strong> <code style="background-color: #f8f9fa; padding: 4px 8px; border-radius: 3px; font-size: 14px;">${defaultPassword}</code></p>
         </div>
         
-        <p><strong>⚠️ IMPORTANTE - Seguridad:</strong></p>
+        <p><strong>IMPORTANTE - Seguridad:</strong></p>
         <ul>
           <li>Esta es una contraseña temporal. <strong style="color: #dc3545;">Debes cambiarla inmediatamente</strong> después de tu primer inicio de sesión.</li>
           <li>No compartas tus credenciales con nadie.</li>
@@ -146,9 +146,9 @@ Hola ${userName},
 Tu cuenta ha sido creada exitosamente en el sistema Nubestock. A continuación encontrarás tus credenciales de acceso:
 
 📧 Email: ${userEmail}
-🔑 Contraseña temporal: ${defaultPassword}
+Contraseña temporal: ${defaultPassword}
 
-⚠️ IMPORTANTE - Seguridad:
+IMPORTANTE - Seguridad:
 - Esta es una contraseña temporal. DEBES CAMBIARLA INMEDIATAMENTE después de tu primer inicio de sesión.
 - No compartas tus credenciales con nadie.
 - Utiliza una contraseña segura que incluya letras, números y caracteres especiales.
