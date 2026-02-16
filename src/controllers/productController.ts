@@ -32,14 +32,14 @@ async function generateStockAlert(product: any): Promise<void> {
 
 export async function listProducts(context: Context, req: HttpRequest): Promise<void> {
   try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 10;
+    const page = Number.parseInt(req.query.page as string) || 1;
+    const limit = Number.parseInt(req.query.limit as string) || 10;
     const search = req.query.search as string;
     const id_category = req.query.id_category as string;
     const id_origin = req.query.id_origin as string;
     const product_type = req.query.type as string || 'PF'; // Por defecto solo productos finales
-    const idCategoryNum = id_category ? parseInt(id_category, 10) : null;
-    const idOriginNum = id_origin ? parseInt(id_origin, 10) : null;
+    const idCategoryNum = id_category ? Number.parseInt(id_category, 10) : null;
+    const idOriginNum = id_origin ? Number.parseInt(id_origin, 10) : null;
 
     let query = db.getConnection()
       .select(
@@ -65,11 +65,11 @@ export async function listProducts(context: Context, req: HttpRequest): Promise<
       });
     }
 
-    if (idCategoryNum && !isNaN(idCategoryNum)) {
+    if (idCategoryNum && !Number.isNaN(idCategoryNum)) {
       query = query.where('p.id_category', idCategoryNum);
     }
 
-    if (idOriginNum && !isNaN(idOriginNum)) {
+    if (idOriginNum && !Number.isNaN(idOriginNum)) {
       query = query.where('p.id_origin', idOriginNum);
     }
 
@@ -88,16 +88,16 @@ export async function listProducts(context: Context, req: HttpRequest): Promise<
       });
     }
 
-    if (idCategoryNum && !isNaN(idCategoryNum)) {
+    if (idCategoryNum && !Number.isNaN(idCategoryNum)) {
       countQuery.where('p.id_category', idCategoryNum);
     }
 
-    if (idOriginNum && !isNaN(idOriginNum)) {
+    if (idOriginNum && !Number.isNaN(idOriginNum)) {
       countQuery.where('p.id_origin', idOriginNum);
     }
 
     const countResult = await countQuery;
-    const total = parseInt((countResult[0] as any).count as string);
+    const total = Number.parseInt((countResult[0] as any).count as string);
 
     // Aplicar paginación
     const offset = (page - 1) * limit;
@@ -132,8 +132,8 @@ export async function listProducts(context: Context, req: HttpRequest): Promise<
 
 export async function getProduct(context: Context, req: HttpRequest, productId: string): Promise<void> {
   try {
-    const productIdNum = parseInt(productId, 10);
-    if (isNaN(productIdNum)) {
+    const productIdNum = Number.parseInt(productId, 10);
+    if (Number.isNaN(productIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -353,8 +353,8 @@ export async function createProduct(context: Context, req: HttpRequest): Promise
 
 export async function updateProduct(context: Context, req: HttpRequest, productId: string): Promise<void> {
   try {
-    const productIdNum = parseInt(productId, 10);
-    if (isNaN(productIdNum)) {
+    const productIdNum = Number.parseInt(productId, 10);
+    if (Number.isNaN(productIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -519,8 +519,8 @@ export async function updateProduct(context: Context, req: HttpRequest, productI
 
 export async function deleteProduct(context: Context, req: HttpRequest, productId: string): Promise<void> {
   try {
-    const productIdNum = parseInt(productId, 10);
-    if (isNaN(productIdNum)) {
+    const productIdNum = Number.parseInt(productId, 10);
+    if (Number.isNaN(productIdNum)) {
       context.res = {
         status: 400,
         body: {

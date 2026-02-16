@@ -14,8 +14,8 @@ export async function listOrigins(context: Context, req: HttpRequest): Promise<v
     
     if (originId) {
       // Obtener origen específico por ID
-      const originIdNum = parseInt(originId, 10);
-      if (isNaN(originIdNum)) {
+      const originIdNum = Number.parseInt(originId, 10);
+      if (Number.isNaN(originIdNum)) {
         context.res = {
           status: 400,
           body: {
@@ -227,8 +227,8 @@ export async function updateOrigin(context: Context, req: HttpRequest): Promise<
       return;
     }
 
-    const originIdNum = parseInt(originId, 10);
-    if (isNaN(originIdNum)) {
+    const originIdNum = Number.parseInt(originId, 10);
+    if (Number.isNaN(originIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -371,8 +371,8 @@ export async function deleteOrigin(context: Context, req: HttpRequest): Promise<
       return;
     }
 
-    const originIdNum = parseInt(originId, 10);
-    if (isNaN(originIdNum)) {
+    const originIdNum = Number.parseInt(originId, 10);
+    if (Number.isNaN(originIdNum)) {
       context.res = {
         status: 400,
         body: {

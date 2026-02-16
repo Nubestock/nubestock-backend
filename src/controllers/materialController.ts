@@ -8,7 +8,7 @@ const db = Database.getInstance();
 export async function listMaterials(context: Context, req: HttpRequest): Promise<void> {
   try {
     const id_origin = req.query.id_origin as string;
-    const idOriginNum = id_origin ? parseInt(id_origin, 10) : null;
+    const idOriginNum = id_origin ? Number.parseInt(id_origin, 10) : null;
 
     // Materiales ahora son productos con type='MP'
     let query = db.getConnection()
@@ -21,7 +21,7 @@ export async function listMaterials(context: Context, req: HttpRequest): Promise
       .where('p.is_active', true)
       .orderBy('p.name');
 
-    if (idOriginNum && !isNaN(idOriginNum)) {
+    if (idOriginNum && !Number.isNaN(idOriginNum)) {
       query = query.where('p.id_origin', idOriginNum);
     }
 
@@ -147,8 +147,8 @@ export async function updateMaterial(context: Context, req: HttpRequest): Promis
       return;
     }
 
-    const materialIdNum = parseInt(materialId, 10);
-    if (isNaN(materialIdNum)) {
+    const materialIdNum = Number.parseInt(materialId, 10);
+    if (Number.isNaN(materialIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -284,8 +284,8 @@ export async function deleteMaterial(context: Context, req: HttpRequest): Promis
       return;
     }
 
-    const materialIdNum = parseInt(materialId, 10);
-    if (isNaN(materialIdNum)) {
+    const materialIdNum = Number.parseInt(materialId, 10);
+    if (Number.isNaN(materialIdNum)) {
       context.res = {
         status: 400,
         body: {

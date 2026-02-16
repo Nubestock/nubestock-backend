@@ -26,8 +26,8 @@ export async function listMachineryAlerts(context: Context, req: HttpRequest): P
       .orderBy('ma.creation_date', 'desc');
 
     if (id_mantainance) {
-      const idMaintenanceNum = parseInt(id_mantainance as string, 10);
-      if (!isNaN(idMaintenanceNum)) {
+      const idMaintenanceNum = Number.parseInt(id_mantainance as string, 10);
+      if (!Number.isNaN(idMaintenanceNum)) {
         query = query.where('ma.id_mantainance', idMaintenanceNum);
       }
     }
@@ -42,8 +42,8 @@ export async function listMachineryAlerts(context: Context, req: HttpRequest): P
 
     // Si se proporciona user_id, filtrar solo las alertas asignadas a ese usuario
     if (user_id) {
-      const userIdNum = parseInt(user_id as string, 10);
-      if (!isNaN(userIdNum)) {
+      const userIdNum = Number.parseInt(user_id as string, 10);
+      if (!Number.isNaN(userIdNum)) {
         query = query
           .join('nubestock.tb_ope_alert_user as au', 'ma.id', 'au.id_machinery_alert')
           .where('au.id_user', userIdNum);
@@ -90,7 +90,7 @@ export async function getUserAlerts(context: Context, req: HttpRequest): Promise
     }
 
     const userId = authResult.user.userId;
-    const userIdNum = typeof userId === 'string' ? parseInt(userId, 10) : userId;
+    const userIdNum = typeof userId === 'string' ? Number.parseInt(userId, 10) : userId;
 
     const { is_read } = req.query;
 
@@ -144,8 +144,8 @@ export async function getUserAlerts(context: Context, req: HttpRequest): Promise
 
 export async function getMachineryAlert(context: Context, req: HttpRequest, alertId: string): Promise<void> {
   try {
-    const alertIdNum = parseInt(alertId, 10);
-    if (isNaN(alertIdNum)) {
+    const alertIdNum = Number.parseInt(alertId, 10);
+    if (Number.isNaN(alertIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -322,10 +322,10 @@ export async function markAlertAsRead(context: Context, req: HttpRequest, alertI
     }
 
     const userId = authResult.user.userId;
-    const userIdNum = typeof userId === 'string' ? parseInt(userId, 10) : userId;
+    const userIdNum = typeof userId === 'string' ? Number.parseInt(userId, 10) : userId;
 
-    const alertIdNum = parseInt(alertId, 10);
-    if (isNaN(alertIdNum)) {
+    const alertIdNum = Number.parseInt(alertId, 10);
+    if (Number.isNaN(alertIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -389,8 +389,8 @@ export async function assignAlertToUsers(
   alertId: string
 ): Promise<void> {
   try {
-    const alertIdNum = parseInt(alertId, 10);
-    if (isNaN(alertIdNum)) {
+    const alertIdNum = Number.parseInt(alertId, 10);
+    if (Number.isNaN(alertIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -507,7 +507,7 @@ export async function registerUserDevice(context: Context, req: HttpRequest): Pr
     }
 
     const userId = authResult.user.userId;
-    const userIdNum = typeof userId === 'string' ? parseInt(userId, 10) : userId;
+    const userIdNum = typeof userId === 'string' ? Number.parseInt(userId, 10) : userId;
 
     const deviceSchema = Joi.object({
       device_token: Joi.string().required(),
@@ -627,7 +627,7 @@ export async function getUserDevices(context: Context, req: HttpRequest): Promis
     }
 
     const userId = authResult.user.userId;
-    const userIdNum = typeof userId === 'string' ? parseInt(userId, 10) : userId;
+    const userIdNum = typeof userId === 'string' ? Number.parseInt(userId, 10) : userId;
 
     const devices = await db.getConnection()
       .select('*')
@@ -674,10 +674,10 @@ export async function unregisterUserDevice(context: Context, req: HttpRequest, d
     }
 
     const userId = authResult.user.userId;
-    const userIdNum = typeof userId === 'string' ? parseInt(userId, 10) : userId;
+    const userIdNum = typeof userId === 'string' ? Number.parseInt(userId, 10) : userId;
 
-    const deviceIdNum = parseInt(deviceId, 10);
-    if (isNaN(deviceIdNum)) {
+    const deviceIdNum = Number.parseInt(deviceId, 10);
+    if (Number.isNaN(deviceIdNum)) {
       context.res = {
         status: 400,
         body: {

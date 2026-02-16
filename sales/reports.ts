@@ -44,8 +44,8 @@ export async function handleDailySalesReport(context: Context, req: HttpRequest)
 
     // Calcular resumen
     const summary = dailyData.reduce((acc: any, day: any) => {
-      const dayTotalSales = parseFloat(day.total_sales || 0);
-      const dayTransactions = parseInt(day.number_of_sales || 0);
+      const dayTotalSales = Number.parseFloat(day.total_sales || 0);
+      const dayTransactions = Number.parseInt(day.number_of_sales || 0);
       
       acc.total_sales += dayTotalSales;
       acc.total_transactions += dayTransactions;
@@ -74,11 +74,11 @@ export async function handleDailySalesReport(context: Context, req: HttpRequest)
         success: true,
         data: dailyData.map((day: any) => ({
           date: day.date,
-          total_sales: parseFloat(day.total_sales || 0),
-          number_of_sales: parseInt(day.number_of_sales || 0),
-          average_sale: parseFloat(day.average_sale || 0),
-          total_paid: parseFloat(day.total_paid || 0),
-          total_pending: parseFloat(day.total_pending || 0),
+          total_sales: Number.parseFloat(day.total_sales || 0),
+          number_of_sales: Number.parseInt(day.number_of_sales || 0),
+          average_sale: Number.parseFloat(day.average_sale || 0),
+          total_paid: Number.parseFloat(day.total_paid || 0),
+          total_pending: Number.parseFloat(day.total_pending || 0),
         })),
         summary,
         timestamp: new Date().toISOString(),
@@ -105,7 +105,7 @@ export async function handleSalesByClientReport(context: Context, req: HttpReque
   try {
     const startDate = req.query.startDate as string;
     const endDate = req.query.endDate as string;
-    const limit = parseInt(req.query.limit as string) || 50;
+    const limit = Number.parseInt(req.query.limit as string) || 50;
 
     if (!startDate || !endDate) {
       context.res = {
@@ -145,10 +145,10 @@ export async function handleSalesByClientReport(context: Context, req: HttpReque
 
     // Calcular resumen
     const totalClients = clientData.length;
-    const totalSales = clientData.reduce((sum: number, client: any) => sum + parseFloat(client.total_sales || 0), 0);
+    const totalSales = clientData.reduce((sum: number, client: any) => sum + Number.parseFloat(client.total_sales || 0), 0);
     const bestClient = clientData.length > 0 ? {
       client_name: clientData[0].client_name,
-      total: parseFloat(clientData[0].total_sales || 0),
+      total: Number.parseFloat(clientData[0].total_sales || 0),
     } : null;
 
     context.res = {
@@ -160,11 +160,11 @@ export async function handleSalesByClientReport(context: Context, req: HttpReque
           client_name: client.client_name,
           business_name: client.business_name,
           ruc_cedula: client.ruc_cedula,
-          total_sales: parseFloat(client.total_sales || 0),
-          number_of_sales: parseInt(client.number_of_sales || 0),
-          average_sale: parseFloat(client.average_sale || 0),
-          total_paid: parseFloat(client.total_paid || 0),
-          total_pending: parseFloat(client.total_pending || 0),
+          total_sales: Number.parseFloat(client.total_sales || 0),
+          number_of_sales: Number.parseInt(client.number_of_sales || 0),
+          average_sale: Number.parseFloat(client.average_sale || 0),
+          total_paid: Number.parseFloat(client.total_paid || 0),
+          total_pending: Number.parseFloat(client.total_pending || 0),
           first_sale_date: client.first_sale_date,
           last_sale_date: client.last_sale_date,
         })),
@@ -198,7 +198,7 @@ export async function handleTopProductsReport(context: Context, req: HttpRequest
   try {
     const startDate = req.query.startDate as string;
     const endDate = req.query.endDate as string;
-    const limit = parseInt(req.query.limit as string) || 20;
+    const limit = Number.parseInt(req.query.limit as string) || 20;
 
     if (!startDate || !endDate) {
       context.res = {
@@ -245,10 +245,10 @@ export async function handleTopProductsReport(context: Context, req: HttpRequest
           product_name: product.product_name,
           sku: product.sku,
           category: product.category,
-          total_quantity_sold: parseInt(product.total_quantity_sold || 0),
-          total_sales: parseFloat(product.total_sales || 0),
-          number_of_transactions: parseInt(product.number_of_transactions || 0),
-          average_price: parseFloat(product.average_price || 0),
+          total_quantity_sold: Number.parseInt(product.total_quantity_sold || 0),
+          total_sales: Number.parseFloat(product.total_sales || 0),
+          number_of_transactions: Number.parseInt(product.number_of_transactions || 0),
+          average_price: Number.parseFloat(product.average_price || 0),
         })),
         timestamp: new Date().toISOString(),
       },
@@ -372,7 +372,7 @@ export async function handleDashboardSummaryReport(context: Context, req: HttpRe
     paymentStatus.forEach((status: any) => {
       const key = status.payment_status;
       if (key in paymentStatusObj) {
-        paymentStatusObj[key] = parseFloat(status.total || 0);
+        paymentStatusObj[key] = Number.parseFloat(status.total || 0);
       }
     });
 
@@ -380,7 +380,7 @@ export async function handleDashboardSummaryReport(context: Context, req: HttpRe
     const salesByPaymentMethodObj: any = {};
     salesByPaymentMethod.forEach((method: any) => {
       if (method.payment_method) {
-        salesByPaymentMethodObj[method.payment_method] = parseFloat(method.total || 0);
+        salesByPaymentMethodObj[method.payment_method] = Number.parseFloat(method.total || 0);
       }
     });
 
@@ -390,19 +390,19 @@ export async function handleDashboardSummaryReport(context: Context, req: HttpRe
         success: true,
         data: {
           sales_summary: {
-            total_sales: parseFloat(salesSummary?.total_sales || 0),
-            total_transactions: parseInt(salesSummary?.total_transactions || 0),
-            average_ticket: parseFloat(salesSummary?.average_ticket || 0),
+            total_sales: Number.parseFloat(salesSummary?.total_sales || 0),
+            total_transactions: Number.parseInt(salesSummary?.total_transactions || 0),
+            average_ticket: Number.parseFloat(salesSummary?.average_ticket || 0),
             growth_percentage: growthPercentage,
           },
           payment_status: paymentStatusObj,
           top_clients: topClients.map((client: any) => ({
             client_name: client.client_name,
-            total: parseFloat(client.total || 0),
+            total: Number.parseFloat(client.total || 0),
           })),
           top_products: topProducts.map((product: any) => ({
             product_name: product.product_name,
-            quantity: parseInt(product.quantity || 0),
+            quantity: Number.parseInt(product.quantity || 0),
           })),
           sales_by_payment_method: salesByPaymentMethodObj,
         },

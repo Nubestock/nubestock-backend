@@ -16,7 +16,7 @@ const getAlertHandler: Handler = async (ctx, req, action) => {
   } else if (action === 'detect') {
     // Endpoint para ejecutar manualmente la detección de alertas (solo admin)
     const daysBeforeDue = req.query?.days_before_due 
-      ? parseInt(req.query.days_before_due as string, 10) 
+      ? Number.parseInt(req.query.days_before_due as string, 10) 
       : 1;
     await machineryAlertService.detectMaintenanceAlerts(daysBeforeDue);
     ctx.res = {
@@ -71,7 +71,7 @@ const routes: Record<string, Record<string, Handler>> = {
         return;
       }
       const daysBeforeDue = req.query?.days_before_due 
-        ? parseInt(req.query.days_before_due as string, 10) 
+        ? Number.parseInt(req.query.days_before_due as string, 10) 
         : 1;
       await machineryAlertService.detectMaintenanceAlerts(daysBeforeDue);
       ctx.res = {
@@ -102,7 +102,7 @@ const routes: Record<string, Record<string, Handler>> = {
     device: (ctx, req) => machineryAlertController.registerUserDevice(ctx, req),
     send: async (ctx, req) => {
       const limitRaw = (req.query?.limit ?? req.body?.limit) as string | number | undefined;
-      const limit = typeof limitRaw === 'string' ? parseInt(limitRaw, 10) : limitRaw;
+      const limit = typeof limitRaw === 'string' ? Number.parseInt(limitRaw, 10) : limitRaw;
       const result = await machineryAlertService.sendPendingMaintenanceAlerts(
         Number.isFinite(limit) ? (limit as number) : 50
       );

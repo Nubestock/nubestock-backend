@@ -41,7 +41,7 @@ export async function createAlertHandler(context: Context, req: HttpRequest): Pr
     // Obtener usuario autenticado para resolved_by
     const authResult = requireAuth(req);
     const userId = authResult.user?.userId ? 
-      (typeof authResult.user.userId === 'string' ? parseInt(authResult.user.userId, 10) : authResult.user.userId) 
+      (typeof authResult.user.userId === 'string' ? Number.parseInt(authResult.user.userId, 10) : authResult.user.userId) 
       : 1;
 
     // Crear la alerta usando la función reutilizable
@@ -178,8 +178,8 @@ export async function listAlerts(context: Context, req: HttpRequest): Promise<vo
 
 export async function getAlert(context: Context, req: HttpRequest, alertId: string): Promise<void> {
   try {
-    const alertIdNum = parseInt(alertId, 10);
-    if (isNaN(alertIdNum)) {
+    const alertIdNum = Number.parseInt(alertId, 10);
+    if (Number.isNaN(alertIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -244,8 +244,8 @@ export async function getAlert(context: Context, req: HttpRequest, alertId: stri
 
 export async function acknowledgeAlert(context: Context, req: HttpRequest, alertId: string): Promise<void> {
   try {
-    const alertIdNum = parseInt(alertId, 10);
-    if (isNaN(alertIdNum)) {
+    const alertIdNum = Number.parseInt(alertId, 10);
+    if (Number.isNaN(alertIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -312,8 +312,8 @@ export async function acknowledgeAlert(context: Context, req: HttpRequest, alert
 
 export async function resolveAlert(context: Context, req: HttpRequest, alertId: string): Promise<void> {
   try {
-    const alertIdNum = parseInt(alertId, 10);
-    if (isNaN(alertIdNum)) {
+    const alertIdNum = Number.parseInt(alertId, 10);
+    if (Number.isNaN(alertIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -365,7 +365,7 @@ export async function resolveAlert(context: Context, req: HttpRequest, alertId: 
       return;
     }
 
-    const resolvedByNum = typeof resolvedBy === 'string' ? parseInt(resolvedBy, 10) : resolvedBy;
+    const resolvedByNum = typeof resolvedBy === 'string' ? Number.parseInt(resolvedBy, 10) : resolvedBy;
 
     const updatedAlert = await db.update('nubestock.tb_mae_alert', alertIdNum, {
       is_active: false,
@@ -410,8 +410,8 @@ export async function resolveAlert(context: Context, req: HttpRequest, alertId: 
 
 export async function dismissAlert(context: Context, req: HttpRequest, alertId: string): Promise<void> {
   try {
-    const alertIdNum = parseInt(alertId, 10);
-    if (isNaN(alertIdNum)) {
+    const alertIdNum = Number.parseInt(alertId, 10);
+    if (Number.isNaN(alertIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -479,8 +479,8 @@ export async function dismissAlert(context: Context, req: HttpRequest, alertId: 
 
 export async function updateAlert(context: Context, req: HttpRequest, alertId: string): Promise<void> {
   try {
-    const alertIdNum = parseInt(alertId, 10);
-    if (isNaN(alertIdNum)) {
+    const alertIdNum = Number.parseInt(alertId, 10);
+    if (Number.isNaN(alertIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -593,8 +593,8 @@ export async function updateAlert(context: Context, req: HttpRequest, alertId: s
 
 export async function deleteAlert(context: Context, req: HttpRequest, alertId: string): Promise<void> {
   try {
-    const alertIdNum = parseInt(alertId, 10);
-    if (isNaN(alertIdNum)) {
+    const alertIdNum = Number.parseInt(alertId, 10);
+    if (Number.isNaN(alertIdNum)) {
       context.res = {
         status: 400,
         body: {

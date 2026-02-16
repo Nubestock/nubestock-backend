@@ -40,7 +40,7 @@ export async function listCountries(context: Context, req: HttpRequest): Promise
 export async function listProvinces(context: Context, req: HttpRequest): Promise<void> {
   try {
     const id_country = req.query.id_country as string;
-    const idCountryNum = id_country ? parseInt(id_country, 10) : null;
+    const idCountryNum = id_country ? Number.parseInt(id_country, 10) : null;
 
     let query = db.getConnection()
       .select(
@@ -52,7 +52,7 @@ export async function listProvinces(context: Context, req: HttpRequest): Promise
       .leftJoin('nubestock.tb_mae_country as c', 'c.id', 'p.id_country')
       .where('p.is_active', true);
 
-    if (idCountryNum && !isNaN(idCountryNum)) {
+    if (idCountryNum && !Number.isNaN(idCountryNum)) {
       query = query.where('p.id_country', idCountryNum);
     }
 
@@ -82,7 +82,7 @@ export async function listProvinces(context: Context, req: HttpRequest): Promise
 export async function listCities(context: Context, req: HttpRequest): Promise<void> {
   try {
     const id_province = req.query.id_province as string;
-    const idProvinceNum = id_province ? parseInt(id_province, 10) : null;
+    const idProvinceNum = id_province ? Number.parseInt(id_province, 10) : null;
 
     let query = db.getConnection()
       .select(
@@ -97,7 +97,7 @@ export async function listCities(context: Context, req: HttpRequest): Promise<vo
       .leftJoin('nubestock.tb_mae_country as c', 'c.id', 'p.id_country')
       .where('ci.is_active', true);
 
-    if (idProvinceNum && !isNaN(idProvinceNum)) {
+    if (idProvinceNum && !Number.isNaN(idProvinceNum)) {
       query = query.where('ci.id_province', idProvinceNum);
     }
 
@@ -154,20 +154,20 @@ export async function getCompleteLocations(context: Context, req: HttpRequest): 
 
     // Aplicar filtros opcionales
     if (id_country) {
-      const idCountryNum = typeof id_country === 'string' ? parseInt(id_country, 10) : id_country;
-      if (!isNaN(idCountryNum)) {
+      const idCountryNum = typeof id_country === 'string' ? Number.parseInt(id_country, 10) : id_country;
+      if (!Number.isNaN(idCountryNum)) {
         query = query.where('c.id', idCountryNum);
       }
     }
     if (id_province) {
-      const idProvinceNum = typeof id_province === 'string' ? parseInt(id_province, 10) : id_province;
-      if (!isNaN(idProvinceNum)) {
+      const idProvinceNum = typeof id_province === 'string' ? Number.parseInt(id_province, 10) : id_province;
+      if (!Number.isNaN(idProvinceNum)) {
         query = query.where('p.id', idProvinceNum);
       }
     }
     if (id_city) {
-      const idCityNum = typeof id_city === 'string' ? parseInt(id_city, 10) : id_city;
-      if (!isNaN(idCityNum)) {
+      const idCityNum = typeof id_city === 'string' ? Number.parseInt(id_city, 10) : id_city;
+      if (!Number.isNaN(idCityNum)) {
         query = query.where('ci.id', idCityNum);
       }
     }
@@ -262,8 +262,8 @@ export async function getCompleteLocations(context: Context, req: HttpRequest): 
 
 export async function getCountryById(context: Context, req: HttpRequest, countryId: string): Promise<void> {
   try {
-    const countryIdNum = parseInt(countryId, 10);
-    if (isNaN(countryIdNum)) {
+    const countryIdNum = Number.parseInt(countryId, 10);
+    if (Number.isNaN(countryIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -312,8 +312,8 @@ export async function getCountryById(context: Context, req: HttpRequest, country
 
 export async function getProvinceById(context: Context, req: HttpRequest, provinceId: string): Promise<void> {
   try {
-    const provinceIdNum = parseInt(provinceId, 10);
-    if (isNaN(provinceIdNum)) {
+    const provinceIdNum = Number.parseInt(provinceId, 10);
+    if (Number.isNaN(provinceIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -371,8 +371,8 @@ export async function getProvinceById(context: Context, req: HttpRequest, provin
 
 export async function getCityById(context: Context, req: HttpRequest, cityId: string): Promise<void> {
   try {
-    const cityIdNum = parseInt(cityId, 10);
-    if (isNaN(cityIdNum)) {
+    const cityIdNum = Number.parseInt(cityId, 10);
+    if (Number.isNaN(cityIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -653,8 +653,8 @@ export async function createCity(context: Context, req: HttpRequest): Promise<vo
 
 export async function updateCountry(context: Context, req: HttpRequest, countryId: string): Promise<void> {
   try {
-    const countryIdNum = parseInt(countryId, 10);
-    if (isNaN(countryIdNum)) {
+    const countryIdNum = Number.parseInt(countryId, 10);
+    if (Number.isNaN(countryIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -759,8 +759,8 @@ export async function updateCountry(context: Context, req: HttpRequest, countryI
 
 export async function updateProvince(context: Context, req: HttpRequest, provinceId: string): Promise<void> {
   try {
-    const provinceIdNum = parseInt(provinceId, 10);
-    if (isNaN(provinceIdNum)) {
+    const provinceIdNum = Number.parseInt(provinceId, 10);
+    if (Number.isNaN(provinceIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -861,8 +861,8 @@ export async function updateProvince(context: Context, req: HttpRequest, provinc
 
 export async function updateCity(context: Context, req: HttpRequest, cityId: string): Promise<void> {
   try {
-    const cityIdNum = parseInt(cityId, 10);
-    if (isNaN(cityIdNum)) {
+    const cityIdNum = Number.parseInt(cityId, 10);
+    if (Number.isNaN(cityIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -965,8 +965,8 @@ export async function updateCity(context: Context, req: HttpRequest, cityId: str
 
 export async function deleteCountry(context: Context, req: HttpRequest, countryId: string): Promise<void> {
   try {
-    const countryIdNum = parseInt(countryId, 10);
-    if (isNaN(countryIdNum)) {
+    const countryIdNum = Number.parseInt(countryId, 10);
+    if (Number.isNaN(countryIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -1017,8 +1017,8 @@ export async function deleteCountry(context: Context, req: HttpRequest, countryI
 
 export async function deleteProvince(context: Context, req: HttpRequest, provinceId: string): Promise<void> {
   try {
-    const provinceIdNum = parseInt(provinceId, 10);
-    if (isNaN(provinceIdNum)) {
+    const provinceIdNum = Number.parseInt(provinceId, 10);
+    if (Number.isNaN(provinceIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -1069,8 +1069,8 @@ export async function deleteProvince(context: Context, req: HttpRequest, provinc
 
 export async function deleteCity(context: Context, req: HttpRequest, cityId: string): Promise<void> {
   try {
-    const cityIdNum = parseInt(cityId, 10);
-    if (isNaN(cityIdNum)) {
+    const cityIdNum = Number.parseInt(cityId, 10);
+    if (Number.isNaN(cityIdNum)) {
       context.res = {
         status: 400,
         body: {

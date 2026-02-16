@@ -24,8 +24,8 @@ export async function listMaintenances(context: Context, req: HttpRequest): Prom
       .orderBy('m.creation_date', 'desc');
 
     if (id_machinery) {
-      const idMachineryNum = parseInt(id_machinery as string, 10);
-      if (!isNaN(idMachineryNum)) {
+      const idMachineryNum = Number.parseInt(id_machinery as string, 10);
+      if (!Number.isNaN(idMachineryNum)) {
         query = query.where('m.id_machinery', idMachineryNum);
       }
     }
@@ -63,8 +63,8 @@ export async function listMaintenances(context: Context, req: HttpRequest): Prom
 
 export async function getMaintenance(context: Context, req: HttpRequest, maintenanceId: string): Promise<void> {
   try {
-    const maintenanceIdNum = parseInt(maintenanceId, 10);
-    if (isNaN(maintenanceIdNum)) {
+    const maintenanceIdNum = Number.parseInt(maintenanceId, 10);
+    if (Number.isNaN(maintenanceIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -206,8 +206,8 @@ export async function createMaintenance(context: Context, req: HttpRequest): Pro
 
 export async function updateMaintenance(context: Context, req: HttpRequest, maintenanceId: string): Promise<void> {
   try {
-    const maintenanceIdNum = parseInt(maintenanceId, 10);
-    if (isNaN(maintenanceIdNum)) {
+    const maintenanceIdNum = Number.parseInt(maintenanceId, 10);
+    if (Number.isNaN(maintenanceIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -337,8 +337,8 @@ export async function updateMaintenance(context: Context, req: HttpRequest, main
 
 export async function deleteMaintenance(context: Context, req: HttpRequest, maintenanceId: string): Promise<void> {
   try {
-    const maintenanceIdNum = parseInt(maintenanceId, 10);
-    if (isNaN(maintenanceIdNum)) {
+    const maintenanceIdNum = Number.parseInt(maintenanceId, 10);
+    if (Number.isNaN(maintenanceIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -421,15 +421,15 @@ export async function listMaintenanceHistory(context: Context, req: HttpRequest)
       .orderBy('h.creation_date', 'desc');
 
     if (id_mantainance) {
-      const idMaintenanceNum = parseInt(id_mantainance as string, 10);
-      if (!isNaN(idMaintenanceNum)) {
+      const idMaintenanceNum = Number.parseInt(id_mantainance as string, 10);
+      if (!Number.isNaN(idMaintenanceNum)) {
         query = query.where('h.id_mantainance', idMaintenanceNum);
       }
     }
 
     if (id_machinery) {
-      const idMachineryNum = parseInt(id_machinery as string, 10);
-      if (!isNaN(idMachineryNum)) {
+      const idMachineryNum = Number.parseInt(id_machinery as string, 10);
+      if (!Number.isNaN(idMachineryNum)) {
         query = query.where('m.id_machinery', idMachineryNum);
       }
     }
@@ -475,8 +475,8 @@ export async function listMaintenanceHistory(context: Context, req: HttpRequest)
 
 export async function getMaintenanceHistory(context: Context, req: HttpRequest, historyId: string): Promise<void> {
   try {
-    const historyIdNum = parseInt(historyId, 10);
-    if (isNaN(historyIdNum)) {
+    const historyIdNum = Number.parseInt(historyId, 10);
+    if (Number.isNaN(historyIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -566,7 +566,7 @@ export async function createMaintenanceHistory(context: Context, req: HttpReques
     }
 
     const userId = authResult.user.userId;
-    const userIdNum = typeof userId === 'string' ? parseInt(userId, 10) : userId;
+    const userIdNum = typeof userId === 'string' ? Number.parseInt(userId, 10) : userId;
 
     const historySchema = Joi.object({
       id_mantainance: Joi.number().integer().required(),
@@ -669,8 +669,8 @@ export async function createMaintenanceHistory(context: Context, req: HttpReques
 
 export async function updateMaintenanceHistory(context: Context, req: HttpRequest, historyId: string): Promise<void> {
   try {
-    const historyIdNum = parseInt(historyId, 10);
-    if (isNaN(historyIdNum)) {
+    const historyIdNum = Number.parseInt(historyId, 10);
+    if (Number.isNaN(historyIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -782,8 +782,8 @@ export async function updateMaintenanceHistory(context: Context, req: HttpReques
 
 export async function deleteMaintenanceHistory(context: Context, req: HttpRequest, historyId: string): Promise<void> {
   try {
-    const historyIdNum = parseInt(historyId, 10);
-    if (isNaN(historyIdNum)) {
+    const historyIdNum = Number.parseInt(historyId, 10);
+    if (Number.isNaN(historyIdNum)) {
       context.res = {
         status: 400,
         body: {

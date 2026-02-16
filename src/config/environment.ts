@@ -12,7 +12,7 @@ export const config = {
   // Configuración de la base de datos
   database: {
     host: process.env.DATABASE_HOSTNAME || 'localhost',
-    port: parseInt(process.env.DATABASE_PORT || '5432'),
+    port: Number.parseInt(process.env.DATABASE_PORT || '5432'),
     user: process.env.DATABASE_USERNAME || 'postgres',
     password: process.env.DATABASE_PASSWORD || 'password',
     name: process.env.DATABASE_NAME || 'nubestock',
@@ -51,9 +51,9 @@ export const config = {
 
   // Configuración de alertas
   alerts: {
-    lowStockThreshold: parseFloat(process.env.LOW_STOCK_THRESHOLD || '10'),
-    maintenanceAlertDays: parseInt(process.env.MAINTENANCE_ALERT_DAYS || '15'),
-    paymentOverdueDays: parseInt(process.env.PAYMENT_OVERDUE_DAYS || '30'),
+    lowStockThreshold: Number.parseFloat(process.env.LOW_STOCK_THRESHOLD || '10'),
+    maintenanceAlertDays: Number.parseInt(process.env.MAINTENANCE_ALERT_DAYS || '15'),
+    paymentOverdueDays: Number.parseInt(process.env.PAYMENT_OVERDUE_DAYS || '30'),
   },
 
   // Configuración de logging
@@ -74,16 +74,16 @@ export const config = {
 
   // Configuración de rate limiting
   rateLimit: {
-    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'),
-    max: parseInt(process.env.RATE_LIMIT_MAX || '100'),
+    windowMs: Number.parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'),
+    max: Number.parseInt(process.env.RATE_LIMIT_MAX || '100'),
   },
 
   // Configuración de seguridad
   security: {
-    bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS || '12'),
-    maxLoginAttempts: parseInt(process.env.MAX_LOGIN_ATTEMPTS || '5'),
-    lockoutDuration: parseInt(process.env.LOCKOUT_DURATION || '300000'),
-    passwordResetTokenExpiry: parseInt(process.env.PASSWORD_RESET_TOKEN_EXPIRY || '3600000'),
+    bcryptRounds: Number.parseInt(process.env.BCRYPT_ROUNDS || '12'),
+    maxLoginAttempts: Number.parseInt(process.env.MAX_LOGIN_ATTEMPTS || '5'),
+    lockoutDuration: Number.parseInt(process.env.LOCKOUT_DURATION || '300000'),
+    passwordResetTokenExpiry: Number.parseInt(process.env.PASSWORD_RESET_TOKEN_EXPIRY || '3600000'),
     bootstrapKey: process.env.BOOTSTRAP_KEY || '',
     /** Clave de la App (query param ?code=). Si no se envía o no coincide, las funciones responden 401. */
     appKey: process.env.APP_KEY || '',

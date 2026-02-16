@@ -9,7 +9,7 @@ export async function listRecipes(context: Context, req: HttpRequest): Promise<v
   try {
     const productId = (req.query.productId as string) || (req.query.id_product as string);
 
-    const productIdNum = productId ? parseInt(productId, 10) : null;
+    const productIdNum = productId ? Number.parseInt(productId, 10) : null;
 
     // Obtener recetas (tb_mae_receipe) con sus materiales (tb_mae_product_receipe)
     let query = db.getConnection()
@@ -40,7 +40,7 @@ export async function listRecipes(context: Context, req: HttpRequest): Promise<v
       .orderBy('r.creation_date', 'desc');
 
     // Si se proporciona productId, filtrar por ese producto
-    if (productIdNum && !isNaN(productIdNum)) {
+    if (productIdNum && !Number.isNaN(productIdNum)) {
       query = query.where('r.id_product', productIdNum);
     }
 
@@ -272,8 +272,8 @@ export async function updateRecipe(context: Context, req: HttpRequest): Promise<
       return;
     }
 
-    const recipeIdNum = parseInt(recipeId, 10);
-    if (isNaN(recipeIdNum)) {
+    const recipeIdNum = Number.parseInt(recipeId, 10);
+    if (Number.isNaN(recipeIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -619,8 +619,8 @@ export async function deleteRecipe(context: Context, req: HttpRequest): Promise<
       return;
     }
 
-    const recipeIdNum = parseInt(recipeId, 10);
-    if (isNaN(recipeIdNum)) {
+    const recipeIdNum = Number.parseInt(recipeId, 10);
+    if (Number.isNaN(recipeIdNum)) {
       context.res = {
         status: 400,
         body: {

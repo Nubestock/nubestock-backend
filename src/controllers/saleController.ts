@@ -9,12 +9,12 @@ const db = Database.getInstance();
 
 export async function listSales(context: Context, req: HttpRequest): Promise<void> {
   try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 10;
+    const page = Number.parseInt(req.query.page as string) || 1;
+    const limit = Number.parseInt(req.query.limit as string) || 10;
     const startDate = req.query.startDate as string;
     const endDate = req.query.endDate as string;
     const id_client = req.query.id_client as string;
-    const idClientNum = id_client ? parseInt(id_client, 10) : null;
+    const idClientNum = id_client ? Number.parseInt(id_client, 10) : null;
     const status = req.query.status as string;
 
     // Query base sin selects para construir filtros
@@ -33,7 +33,7 @@ export async function listSales(context: Context, req: HttpRequest): Promise<voi
       baseQuery = baseQuery.where('s.sale_date', '<=', endDate);
     }
 
-    if (idClientNum && !isNaN(idClientNum)) {
+    if (idClientNum && !Number.isNaN(idClientNum)) {
       baseQuery = baseQuery.where('s.id_client', idClientNum);
     }
 
@@ -44,7 +44,7 @@ export async function listSales(context: Context, req: HttpRequest): Promise<voi
     // Contar total (query separada para count)
     const totalQuery = baseQuery.clone().count('s.id as count').first();
     const countResult = await totalQuery;
-    const total = parseInt(countResult?.count as string || '0');
+    const total = Number.parseInt(countResult?.count as string || '0');
 
     // Query para obtener los datos con paginación
     const sales = await baseQuery
@@ -87,8 +87,8 @@ export async function listSales(context: Context, req: HttpRequest): Promise<voi
 
 export async function getSale(context: Context, req: HttpRequest, saleId: string): Promise<void> {
   try {
-    const saleIdNum = parseInt(saleId, 10);
-    if (isNaN(saleIdNum)) {
+    const saleIdNum = Number.parseInt(saleId, 10);
+    if (Number.isNaN(saleIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -181,8 +181,8 @@ export async function getSale(context: Context, req: HttpRequest, saleId: string
 
 export async function createSale(context: Context, req: HttpRequest, userId: string): Promise<void> {
   try {
-    const userIdNum = typeof userId === 'string' ? parseInt(userId, 10) : userId;
-    if (isNaN(userIdNum)) {
+    const userIdNum = typeof userId === 'string' ? Number.parseInt(userId, 10) : userId;
+    if (Number.isNaN(userIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -355,8 +355,8 @@ export async function createSale(context: Context, req: HttpRequest, userId: str
 
         // Verificar si el stock está por debajo del mínimo y generar alerta
         if (updatedProduct && updatedProduct.quantity !== undefined && updatedProduct.min_stock !== undefined) {
-          const currentStock = parseFloat(updatedProduct.quantity) || 0;
-          const minStock = parseFloat(updatedProduct.min_stock) || 0;
+          const currentStock = Number.parseFloat(updatedProduct.quantity) || 0;
+          const minStock = Number.parseFloat(updatedProduct.min_stock) || 0;
           
           if (currentStock <= minStock) {
             // Generar alerta de stock bajo asociada a la transacción
@@ -426,8 +426,8 @@ export async function updatePaymentStatus(context: Context, req: HttpRequest): P
       return;
     }
 
-    const saleIdNum = parseInt(saleId, 10);
-    if (isNaN(saleIdNum)) {
+    const saleIdNum = Number.parseInt(saleId, 10);
+    if (Number.isNaN(saleIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -551,20 +551,20 @@ export async function getSalesStats(context: Context, req: HttpRequest): Promise
         success: true,
         data: {
           general: {
-            total_sales: parseFloat(generalStats?.total_sales || 0),
-            total_sales_count: parseInt(generalStats?.total_sales_count || 0),
-            average_sale: parseFloat(generalStats?.average_sale || 0),
-            unique_clients: parseInt(generalStats?.unique_clients || 0),
+            total_sales: Number.parseFloat(generalStats?.total_sales || 0),
+            total_sales_count: Number.parseInt(generalStats?.total_sales_count || 0),
+            average_sale: Number.parseFloat(generalStats?.average_sale || 0),
+            unique_clients: Number.parseInt(generalStats?.unique_clients || 0),
           },
           byStatus: paymentStats.map((stat: any) => ({
             status: stat.status,
-            count: parseInt(stat.count || 0),
-            total_amount: parseFloat(stat.total_amount || 0),
+            count: Number.parseInt(stat.count || 0),
+            total_amount: Number.parseFloat(stat.total_amount || 0),
           })),
           topClients: topClients.map((client: any) => ({
             client_name: client.name,
-            total_purchased: parseFloat(client.total_purchased || 0),
-            sales_count: parseInt(client.sales_count || 0),
+            total_purchased: Number.parseFloat(client.total_purchased || 0),
+            sales_count: Number.parseInt(client.sales_count || 0),
           })),
           dateRange: {
             start: startDate,
@@ -655,8 +655,8 @@ export async function updateSale(context: Context, req: HttpRequest, saleId: str
       return;
     }
 
-    const saleIdNum = parseInt(saleId, 10);
-    if (isNaN(saleIdNum)) {
+    const saleIdNum = Number.parseInt(saleId, 10);
+    if (Number.isNaN(saleIdNum)) {
       context.res = {
         status: 400,
         body: {

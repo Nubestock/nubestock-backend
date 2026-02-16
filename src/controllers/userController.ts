@@ -10,8 +10,8 @@ const db = Database.getInstance();
 
 export async function listUsers(context: Context, req: HttpRequest): Promise<void> {
   try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 10;
+    const page = Number.parseInt(req.query.page as string) || 1;
+    const limit = Number.parseInt(req.query.limit as string) || 10;
     const search = req.query.search as string;
     const is_active = req.query.is_active as string;
 
@@ -57,7 +57,7 @@ export async function listUsers(context: Context, req: HttpRequest): Promise<voi
     }
 
     const countResult = await countQuery;
-    const total = parseInt((countResult[0] as any).count as string);
+    const total = Number.parseInt((countResult[0] as any).count as string);
 
     // Aplicar paginación
     const offset = (page - 1) * limit;
@@ -117,8 +117,8 @@ export async function listUsers(context: Context, req: HttpRequest): Promise<voi
 
 export async function getUser(context: Context, req: HttpRequest, userId: string): Promise<void> {
   try {
-    const userIdNum = parseInt(userId, 10);
-    if (isNaN(userIdNum)) {
+    const userIdNum = Number.parseInt(userId, 10);
+    if (Number.isNaN(userIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -293,8 +293,8 @@ export async function createUser(context: Context, req: HttpRequest): Promise<vo
 
 export async function updateUser(context: Context, req: HttpRequest, userId: string): Promise<void> {
   try {
-    const userIdNum = parseInt(userId, 10);
-    if (isNaN(userIdNum)) {
+    const userIdNum = Number.parseInt(userId, 10);
+    if (Number.isNaN(userIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -411,8 +411,8 @@ export async function updateUser(context: Context, req: HttpRequest, userId: str
 
 export async function deleteUser(context: Context, req: HttpRequest, userId: string): Promise<void> {
   try {
-    const userIdNum = parseInt(userId, 10);
-    if (isNaN(userIdNum)) {
+    const userIdNum = Number.parseInt(userId, 10);
+    if (Number.isNaN(userIdNum)) {
       context.res = {
         status: 400,
         body: {

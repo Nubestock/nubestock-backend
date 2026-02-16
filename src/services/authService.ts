@@ -597,11 +597,11 @@ export class AuthService {
   private getTokenExpirationTime(): number {
     const expiresIn = config.jwt.expiresIn;
     if (expiresIn.endsWith('h')) {
-      return parseInt(expiresIn) * 3600;
+      return Number.parseInt(expiresIn) * 3600;
     } else if (expiresIn.endsWith('d')) {
-      return parseInt(expiresIn) * 86400;
+      return Number.parseInt(expiresIn) * 86400;
     } else if (expiresIn.endsWith('m')) {
-      return parseInt(expiresIn) * 60;
+      return Number.parseInt(expiresIn) * 60;
     }
     return 86400; // 24 horas por defecto
   }

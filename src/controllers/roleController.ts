@@ -97,8 +97,8 @@ export async function getAllRolesWithPermissions(context: Context, req: HttpRequ
 
 export async function getRole(context: Context, req: HttpRequest, roleId: string): Promise<void> {
   try {
-    const roleIdNum = parseInt(roleId, 10);
-    if (isNaN(roleIdNum)) {
+    const roleIdNum = Number.parseInt(roleId, 10);
+    if (Number.isNaN(roleIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -203,8 +203,8 @@ export async function createRole(context: Context, req: HttpRequest): Promise<vo
     if (permissions && Array.isArray(permissions)) {
       // Validar que todos los permisos existan antes de asignarlos
       const permissionIds = permissions
-        .map(p => typeof p === 'string' ? parseInt(p, 10) : p)
-        .filter(p => !isNaN(p));
+        .map(p => typeof p === 'string' ? Number.parseInt(p, 10) : p)
+        .filter(p => !Number.isNaN(p));
 
       if (permissionIds.length > 0) {
         const existingPermissions = await db.getConnection()
@@ -263,8 +263,8 @@ export async function createRole(context: Context, req: HttpRequest): Promise<vo
 
 export async function updateRole(context: Context, req: HttpRequest, roleId: string): Promise<void> {
   try {
-    const roleIdNum = parseInt(roleId, 10);
-    if (isNaN(roleIdNum)) {
+    const roleIdNum = Number.parseInt(roleId, 10);
+    if (Number.isNaN(roleIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -304,8 +304,8 @@ export async function updateRole(context: Context, req: HttpRequest, roleId: str
     if (permissions && Array.isArray(permissions)) {
       // Validar que todos los permisos existan antes de asignarlos
       const permissionIds = permissions
-        .map(p => typeof p === 'string' ? parseInt(p, 10) : p)
-        .filter(p => !isNaN(p));
+        .map(p => typeof p === 'string' ? Number.parseInt(p, 10) : p)
+        .filter(p => !Number.isNaN(p));
 
       if (permissionIds.length > 0) {
         const existingPermissions = await db.getConnection()
@@ -370,8 +370,8 @@ export async function updateRole(context: Context, req: HttpRequest, roleId: str
 
 export async function deleteRole(context: Context, req: HttpRequest, roleId: string): Promise<void> {
   try {
-    const roleIdNum = parseInt(roleId, 10);
-    if (isNaN(roleIdNum)) {
+    const roleIdNum = Number.parseInt(roleId, 10);
+    if (Number.isNaN(roleIdNum)) {
       context.res = {
         status: 400,
         body: {

@@ -11,8 +11,8 @@ export async function listCategories(context: Context, req: HttpRequest): Promis
     
     if (categoryId) {
       // Obtener categoría específica por ID
-      const categoryIdNum = parseInt(categoryId, 10);
-      if (isNaN(categoryIdNum)) {
+      const categoryIdNum = Number.parseInt(categoryId, 10);
+      if (Number.isNaN(categoryIdNum)) {
         context.res = {
           status: 400,
           body: {
@@ -163,8 +163,8 @@ export async function updateCategory(context: Context, req: HttpRequest): Promis
       return;
     }
 
-    const categoryIdNum = parseInt(categoryId, 10);
-    if (isNaN(categoryIdNum)) {
+    const categoryIdNum = Number.parseInt(categoryId, 10);
+    if (Number.isNaN(categoryIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -285,8 +285,8 @@ export async function deleteCategory(context: Context, req: HttpRequest): Promis
       return;
     }
 
-    const categoryIdNum = parseInt(categoryId, 10);
-    if (isNaN(categoryIdNum)) {
+    const categoryIdNum = Number.parseInt(categoryId, 10);
+    if (Number.isNaN(categoryIdNum)) {
       context.res = {
         status: 400,
         body: {

@@ -71,8 +71,8 @@ export async function listClients(context: Context, req: HttpRequest): Promise<v
 
 export async function getClient(context: Context, req: HttpRequest, clientId: string): Promise<void> {
   try {
-    const clientIdNum = parseInt(clientId, 10);
-    if (isNaN(clientIdNum)) {
+    const clientIdNum = Number.parseInt(clientId, 10);
+    if (Number.isNaN(clientIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -240,8 +240,8 @@ export async function createClient(context: Context, req: HttpRequest): Promise<
 
 export async function updateClient(context: Context, req: HttpRequest, clientId: string): Promise<void> {
   try {
-    const clientIdNum = parseInt(clientId, 10);
-    if (isNaN(clientIdNum)) {
+    const clientIdNum = Number.parseInt(clientId, 10);
+    if (Number.isNaN(clientIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -379,8 +379,8 @@ export async function updateClient(context: Context, req: HttpRequest, clientId:
 
 export async function deleteClient(context: Context, req: HttpRequest, clientId: string): Promise<void> {
   try {
-    const clientIdNum = parseInt(clientId, 10);
-    if (isNaN(clientIdNum)) {
+    const clientIdNum = Number.parseInt(clientId, 10);
+    if (Number.isNaN(clientIdNum)) {
       context.res = {
         status: 400,
         body: {

@@ -320,7 +320,7 @@ const statsHandler: AzureFunction = async (context: Context, req: HttpRequest): 
     const salesByStatusMap: Record<string, number> = { pending: 0, paid: 0, overdue: 0, cancelled: 0 };
     (salesByStatus as any[]).forEach((row: any) => {
       const status = row.status || 'pending';
-      salesByStatusMap[status] = parseInt(String(row.count || 0), 10);
+      salesByStatusMap[status] = Number.parseInt(String(row.count || 0), 10);
     });
 
     const alertsByPriorityMap: Record<string, number> = { low: 0, medium: 0, high: 0 };
@@ -328,25 +328,25 @@ const statsHandler: AzureFunction = async (context: Context, req: HttpRequest): 
     alertsByPriorityArray.forEach((row: any) => {
       const priority = (row.priority || 'medium').toLowerCase();
       if (priority in alertsByPriorityMap) {
-        alertsByPriorityMap[priority] = parseInt(String(row.count || 0), 10);
+        alertsByPriorityMap[priority] = Number.parseInt(String(row.count || 0), 10);
       }
     });
 
     const alertsByTypeMap: Record<string, number> = {};
     const alertsByTypeArray = Array.isArray(alertsByType) ? alertsByType : [];
     alertsByTypeArray.forEach((row: any) => {
-      alertsByTypeMap[row.alert_type || 'unknown'] = parseInt(String(row.count || 0), 10);
+      alertsByTypeMap[row.alert_type || 'unknown'] = Number.parseInt(String(row.count || 0), 10);
     });
 
     // Construir respuesta de manera optimizada - evitar cálculos redundantes
-    const productsTotal = parseInt(String(p?.total || 0), 10);
-    const productsActive = parseInt(String(p?.active || 0), 10);
-    const categoriesTotal = parseInt(String(c?.total || 0), 10);
-    const categoriesActive = parseInt(String(c?.active || 0), 10);
-    const clientsTotal = parseInt(String(cl?.total || 0), 10);
-    const clientsActive = parseInt(String(cl?.active || 0), 10);
-    const usersTotal = parseInt(String(u?.total || 0), 10);
-    const usersActive = parseInt(String(u?.active || 0), 10);
+    const productsTotal = Number.parseInt(String(p?.total || 0), 10);
+    const productsActive = Number.parseInt(String(p?.active || 0), 10);
+    const categoriesTotal = Number.parseInt(String(c?.total || 0), 10);
+    const categoriesActive = Number.parseInt(String(c?.active || 0), 10);
+    const clientsTotal = Number.parseInt(String(cl?.total || 0), 10);
+    const clientsActive = Number.parseInt(String(cl?.active || 0), 10);
+    const usersTotal = Number.parseInt(String(u?.total || 0), 10);
+    const usersActive = Number.parseInt(String(u?.active || 0), 10);
 
     // Mapeo optimizado para semanas
     const weekLabels: Record<number, string> = {
@@ -361,8 +361,8 @@ const statsHandler: AzureFunction = async (context: Context, req: HttpRequest): 
         total: productsTotal,
         active: productsActive,
         inactive: productsTotal - productsActive,
-        lowStock: parseInt(String(p?.low_stock || 0), 10),
-        totalInventoryValue: parseFloat(String(p?.inventory_value || 0)),
+        lowStock: Number.parseInt(String(p?.low_stock || 0), 10),
+        totalInventoryValue: Number.parseFloat(String(p?.inventory_value || 0)),
       },
       categories: {
         total: categoriesTotal,
@@ -370,34 +370,34 @@ const statsHandler: AzureFunction = async (context: Context, req: HttpRequest): 
         inactive: categoriesTotal - categoriesActive,
       },
       sales: {
-        total: parseInt(String(s?.total || 0), 10),
-        active: parseInt(String(s?.active || 0), 10),
-        cancelled: parseInt(String(s?.cancelled || 0), 10),
+        total: Number.parseInt(String(s?.total || 0), 10),
+        active: Number.parseInt(String(s?.active || 0), 10),
+        cancelled: Number.parseInt(String(s?.cancelled || 0), 10),
         byStatus: {
           pending: salesByStatusMap.pending || 0,
           paid: salesByStatusMap.paid || 0,
           overdue: salesByStatusMap.overdue || 0,
           cancelled: salesByStatusMap.cancelled || 0,
         },
-        totalValue: parseFloat(String(s?.total_value || 0)),
-        paidValue: parseFloat(String(s?.paid_value || 0)),
-        pendingValue: parseFloat(String(s?.pending_value || 0)),
-        overdueValue: parseFloat(String(s?.overdue_value || 0)),
+        totalValue: Number.parseFloat(String(s?.total_value || 0)),
+        paidValue: Number.parseFloat(String(s?.paid_value || 0)),
+        pendingValue: Number.parseFloat(String(s?.pending_value || 0)),
+        overdueValue: Number.parseFloat(String(s?.overdue_value || 0)),
         thisMonth: {
-          count: parseInt(String(sMonth?.count || 0), 10),
-          value: parseFloat(String(sMonth?.value || 0)),
+          count: Number.parseInt(String(sMonth?.count || 0), 10),
+          value: Number.parseFloat(String(sMonth?.value || 0)),
         },
         thisYear: {
-          count: parseInt(String(sYear?.count || 0), 10),
-          value: parseFloat(String(sYear?.value || 0)),
+          count: Number.parseInt(String(sYear?.count || 0), 10),
+          value: Number.parseFloat(String(sYear?.value || 0)),
         },
         byWeek: (Array.isArray(salesByWeek) ? salesByWeek : []).map((week: any) => {
-          const weekNum = parseInt(String(week.week_number || 0), 10);
+          const weekNum = Number.parseInt(String(week.week_number || 0), 10);
           return {
             week: weekNum,
             week_label: weekLabels[weekNum] || (weekNum >= 5 ? 'Semana 5 (29+)' : 'Semana desconocida'),
-            count: parseInt(String(week.count || 0), 10),
-            value: parseFloat(String(week.total || 0)),
+            count: Number.parseInt(String(week.count || 0), 10),
+            value: Number.parseFloat(String(week.total || 0)),
           };
         }),
       },
@@ -405,13 +405,13 @@ const statsHandler: AzureFunction = async (context: Context, req: HttpRequest): 
         total: clientsTotal,
         active: clientsActive,
         inactive: clientsTotal - clientsActive,
-        withCredit: parseInt(String(cl?.with_credit || 0), 10),
-        totalCreditLimit: parseFloat(String(cl?.credit_limit || 0)),
+        withCredit: Number.parseInt(String(cl?.with_credit || 0), 10),
+        totalCreditLimit: Number.parseFloat(String(cl?.credit_limit || 0)),
       },
       production: {
-        total: parseInt(String(prod?.total || 0), 10),
-        thisMonth: parseInt(String(prod?.this_month || 0), 10),
-        thisYear: parseInt(String(prod?.this_year || 0), 10),
+        total: Number.parseInt(String(prod?.total || 0), 10),
+        thisMonth: Number.parseInt(String(prod?.this_month || 0), 10),
+        thisYear: Number.parseInt(String(prod?.this_year || 0), 10),
         daily: (() => {
           // Procesar resultado de raw query - puede venir como { rows: [...] } o directamente como array
           let dailyArray: any[] = [];
@@ -442,7 +442,7 @@ const statsHandler: AzureFunction = async (context: Context, req: HttpRequest): 
               if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
                 // Si el formato no es correcto, intentar parsearlo
                 const parsed = new Date(dateStr);
-                if (!isNaN(parsed.getTime())) {
+                if (!Number.isNaN(parsed.getTime())) {
                   dateStr = parsed.toISOString().split('T')[0];
                 } else {
                   // Fallback a fecha actual si no se puede parsear
@@ -456,7 +456,7 @@ const statsHandler: AzureFunction = async (context: Context, req: HttpRequest): 
             
             // Parsear la fecha para obtener día de la semana y número
             const date = new Date(dateStr + 'T00:00:00.000Z');
-            if (isNaN(date.getTime())) {
+            if (Number.isNaN(date.getTime())) {
               // Si la fecha es inválida, usar fecha actual
               const now = new Date();
               dateStr = now.toISOString().split('T')[0];
@@ -470,15 +470,15 @@ const statsHandler: AzureFunction = async (context: Context, req: HttpRequest): 
             return {
               date: dateStr,
               day_label: `${dayName} ${dayNumber}`,
-              production: parseFloat(String(day.production || 0)),
-              waste: parseFloat(String(day.waste || 0)),
+              production: Number.parseFloat(String(day.production || 0)),
+              waste: Number.parseFloat(String(day.waste || 0)),
             };
           });
         })(),
       },
       alerts: {
-        total: parseInt(String(a?.total || 0), 10),
-        active: parseInt(String(a?.active || 0), 10),
+        total: Number.parseInt(String(a?.total || 0), 10),
+        active: Number.parseInt(String(a?.active || 0), 10),
         byPriority: {
           low: alertsByPriorityMap.low || 0,
           medium: alertsByPriorityMap.medium || 0,
@@ -492,19 +492,19 @@ const statsHandler: AzureFunction = async (context: Context, req: HttpRequest): 
         inactive: usersTotal - usersActive,
       },
       transactions: {
-        total: parseInt(String(t?.total || 0), 10),
-        thisMonth: parseInt(String(t?.this_month || 0), 10),
+        total: Number.parseInt(String(t?.total || 0), 10),
+        thisMonth: Number.parseInt(String(t?.this_month || 0), 10),
         recent: (Array.isArray(recentTransactions) ? recentTransactions : []).map((tx: any) => ({
-          id: parseInt(String(tx.id || 0), 10),
+          id: Number.parseInt(String(tx.id || 0), 10),
           product_name: tx.product_name || 'Producto desconocido',
           product_sku: tx.product_sku || 'N/A',
           user_name: tx.user_name || 'Usuario desconocido',
-          quantity: parseFloat(String(tx.quantity || 0)),
+          quantity: Number.parseFloat(String(tx.quantity || 0)),
           type: tx.type || 'IN',
           direction: tx.direction || '+',
           creation_date: tx.creation_date ? new Date(tx.creation_date).toISOString() : new Date().toISOString(),
           has_waste: tx.has_waste || false,
-          waste_quantity: tx.waste_quantity ? parseFloat(String(tx.waste_quantity)) : undefined,
+          waste_quantity: tx.waste_quantity ? Number.parseFloat(String(tx.waste_quantity)) : undefined,
         })),
       },
     };

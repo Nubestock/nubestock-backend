@@ -11,8 +11,8 @@ export async function listMeasures(context: Context, req: HttpRequest): Promise<
     
     if (measureId) {
       // Obtener medida específica por ID
-      const measureIdNum = parseInt(measureId, 10);
-      if (isNaN(measureIdNum)) {
+      const measureIdNum = Number.parseInt(measureId, 10);
+      if (Number.isNaN(measureIdNum)) {
         context.res = {
           status: 400,
           body: {
@@ -164,8 +164,8 @@ export async function updateMeasure(context: Context, req: HttpRequest): Promise
       return;
     }
 
-    const measureIdNum = parseInt(measureId, 10);
-    if (isNaN(measureIdNum)) {
+    const measureIdNum = Number.parseInt(measureId, 10);
+    if (Number.isNaN(measureIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -290,8 +290,8 @@ export async function deleteMeasure(context: Context, req: HttpRequest): Promise
       return;
     }
 
-    const measureIdNum = parseInt(measureId, 10);
-    if (isNaN(measureIdNum)) {
+    const measureIdNum = Number.parseInt(measureId, 10);
+    if (Number.isNaN(measureIdNum)) {
       context.res = {
         status: 400,
         body: {

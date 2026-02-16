@@ -156,7 +156,7 @@ export async function bulkCreateProducts(context: Context, req: HttpRequest): Pr
       return;
     }
     const userId = typeof authResult.user.userId === 'string' 
-      ? parseInt(authResult.user.userId, 10) 
+      ? Number.parseInt(authResult.user.userId, 10) 
       : authResult.user.userId;
 
     // OPTIMIZACIÓN: Obtener todos los SKUs existentes con sus datos completos

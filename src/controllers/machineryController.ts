@@ -51,8 +51,8 @@ export async function listMachinery(context: Context, req: HttpRequest): Promise
 
 export async function getMachinery(context: Context, req: HttpRequest, machineryId: string): Promise<void> {
   try {
-    const machineryIdNum = parseInt(machineryId, 10);
-    if (isNaN(machineryIdNum)) {
+    const machineryIdNum = Number.parseInt(machineryId, 10);
+    if (Number.isNaN(machineryIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -164,8 +164,8 @@ export async function createMachinery(context: Context, req: HttpRequest): Promi
 
 export async function updateMachinery(context: Context, req: HttpRequest, machineryId: string): Promise<void> {
   try {
-    const machineryIdNum = parseInt(machineryId, 10);
-    if (isNaN(machineryIdNum)) {
+    const machineryIdNum = Number.parseInt(machineryId, 10);
+    if (Number.isNaN(machineryIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -259,8 +259,8 @@ export async function updateMachinery(context: Context, req: HttpRequest, machin
 
 export async function deleteMachinery(context: Context, req: HttpRequest, machineryId: string): Promise<void> {
   try {
-    const machineryIdNum = parseInt(machineryId, 10);
-    if (isNaN(machineryIdNum)) {
+    const machineryIdNum = Number.parseInt(machineryId, 10);
+    if (Number.isNaN(machineryIdNum)) {
       context.res = {
         status: 400,
         body: {

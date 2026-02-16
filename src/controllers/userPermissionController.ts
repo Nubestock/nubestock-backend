@@ -185,8 +185,8 @@ export async function assignRole(context: Context, req: HttpRequest): Promise<vo
     }
 
     // Convertir userId y roleId a números si vienen como string
-    const userId = typeof value.userId === 'string' ? parseInt(value.userId, 10) : value.userId;
-    const roleId = typeof value.roleId === 'string' ? parseInt(value.roleId, 10) : value.roleId;
+    const userId = typeof value.userId === 'string' ? Number.parseInt(value.userId, 10) : value.userId;
+    const roleId = typeof value.roleId === 'string' ? Number.parseInt(value.roleId, 10) : value.roleId;
     const { assignment_reason } = value;
 
     // Verificar si el usuario existe
@@ -239,7 +239,7 @@ export async function assignRole(context: Context, req: HttpRequest): Promise<vo
     }
 
     // Convertir assignedBy a número si es string
-    const assignedByNum = typeof assignedBy === 'string' ? parseInt(assignedBy, 10) : assignedBy;
+    const assignedByNum = typeof assignedBy === 'string' ? Number.parseInt(assignedBy, 10) : assignedBy;
 
     // Asignar el rol
     const newAssignment = await db.create('nubestock.tb_mae_user_role', {
@@ -289,8 +289,8 @@ export async function removeRole(context: Context, req: HttpRequest, userId: str
       return;
     }
 
-    const userIdNum = typeof userId === 'string' ? parseInt(userId, 10) : userId;
-    const roleIdNum = typeof roleId === 'string' ? parseInt(roleId, 10) : roleId;
+    const userIdNum = typeof userId === 'string' ? Number.parseInt(userId, 10) : userId;
+    const roleIdNum = typeof roleId === 'string' ? Number.parseInt(roleId, 10) : roleId;
 
     // Desactivar la asignación de rol
     const result = await db.getConnection()

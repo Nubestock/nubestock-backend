@@ -7,15 +7,15 @@ const db = Database.getInstance();
 
 export async function getDailyProduction(context: Context, req: HttpRequest): Promise<void> {
   try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 10;
+    const page = Number.parseInt(req.query.page as string) || 1;
+    const limit = Number.parseInt(req.query.limit as string) || 10;
     const startDate = req.query.startDate as string;
     const endDate = req.query.endDate as string;
     const id_user = req.query.id_user as string;
     const id_product = req.query.id_product as string;
     const status = req.query.status as string; // 'pending', 'completed', o ambos
-    const idUserNum = id_user ? parseInt(id_user, 10) : null;
-    const idProductNum = id_product ? parseInt(id_product, 10) : null;
+    const idUserNum = id_user ? Number.parseInt(id_user, 10) : null;
+    const idProductNum = id_product ? Number.parseInt(id_product, 10) : null;
 
     // Crear query base para filtros usando tb_ope_pending_transaction para pendientes
     // y tb_ope_transaction para completadas (producto final con direction='+')
@@ -75,11 +75,11 @@ export async function getDailyProduction(context: Context, req: HttpRequest): Pr
       if (endDate) {
         baseQuery = baseQuery.where('pt.creation_date', '<=', endDate);
       }
-      if (idProductNum && !isNaN(idProductNum)) {
+      if (idProductNum && !Number.isNaN(idProductNum)) {
         baseQuery = baseQuery.where('pt.id_product', idProductNum);
       }
       // Para id_user, usar t_ref (transacción de referencia)
-      if (idUserNum && !isNaN(idUserNum)) {
+      if (idUserNum && !Number.isNaN(idUserNum)) {
         baseQuery = baseQuery.where('t_ref.id_user', idUserNum);
       }
     } else {
@@ -90,10 +90,10 @@ export async function getDailyProduction(context: Context, req: HttpRequest): Pr
       if (endDate) {
         baseQuery = baseQuery.where('t.creation_date', '<=', endDate);
       }
-      if (idUserNum && !isNaN(idUserNum)) {
+      if (idUserNum && !Number.isNaN(idUserNum)) {
         baseQuery = baseQuery.where('t.id_user', idUserNum);
       }
-      if (idProductNum && !isNaN(idProductNum)) {
+      if (idProductNum && !Number.isNaN(idProductNum)) {
         baseQuery = baseQuery.where('t.id_product', idProductNum);
       }
     }
@@ -111,11 +111,11 @@ export async function getDailyProduction(context: Context, req: HttpRequest): Pr
         .clearGroup()
         .countDistinct('pt.id_product as count');
       const [{ count }] = await countQuery;
-      total = parseInt(count as string);
+      total = Number.parseInt(count as string);
       totalPending = total;
     } else if (status === 'completed') {
       const [{ count }] = await baseQuery.clone().count('t.id as count');
-      total = parseInt(count as string);
+      total = Number.parseInt(count as string);
       totalCompleted = total;
     } else {
       // Sin filtro: contar ambas
@@ -132,7 +132,7 @@ export async function getDailyProduction(context: Context, req: HttpRequest): Pr
       if (endDate) {
         pendingCountQuery.where('pt.creation_date', '<=', endDate);
       }
-      if (idProductNum && !isNaN(idProductNum)) {
+      if (idProductNum && !Number.isNaN(idProductNum)) {
         pendingCountQuery.where('pt.id_product', idProductNum);
       }
       
@@ -141,10 +141,10 @@ export async function getDailyProduction(context: Context, req: HttpRequest): Pr
         .clearOrder()
         .clearGroup()
         .countDistinct('pt.id_product as count');
-      totalPending = parseInt(pendingCount as string);
+      totalPending = Number.parseInt(pendingCount as string);
       
       const [{ count: completedCount }] = await baseQuery.clone().count('t.id as count');
-      totalCompleted = parseInt(completedCount as string);
+      totalCompleted = Number.parseInt(completedCount as string);
       
       total = totalPending + totalCompleted;
     }
@@ -226,10 +226,10 @@ export async function getDailyProduction(context: Context, req: HttpRequest): Pr
       if (endDate) {
         pendingQuery.where('pt.creation_date', '<=', endDate);
       }
-      if (idProductNum && !isNaN(idProductNum)) {
+      if (idProductNum && !Number.isNaN(idProductNum)) {
         pendingQuery.where('pt.id_product', idProductNum);
       }
-      if (idUserNum && !isNaN(idUserNum)) {
+      if (idUserNum && !Number.isNaN(idUserNum)) {
         pendingQuery.where('t_ref.id_user', idUserNum);
       }
       
@@ -362,8 +362,8 @@ export async function getDailyProduction(context: Context, req: HttpRequest): Pr
         // Usar transaction_id como clave única para evitar duplicados
         if (!materialMap.has(mt.id)) {
           // Asegurar conversión a número para evitar concatenación de strings
-          const waste = mt.has_waste ? parseFloat(String(mt.waste_quantity || 0)) : 0;
-          const quantityUsed = parseFloat(String(mt.quantity || 0));
+          const waste = mt.has_waste ? Number.parseFloat(String(mt.waste_quantity || 0)) : 0;
+          const quantityUsed = Number.parseFloat(String(mt.quantity || 0));
           
           materialMap.set(mt.id, {
             id_product: mt.id_product,
@@ -371,9 +371,9 @@ export async function getDailyProduction(context: Context, req: HttpRequest): Pr
             sku: mt.material_sku,
             quantity_used: quantityUsed,
             waste: waste,
-            effective_quantity: parseFloat((quantityUsed - waste).toFixed(2)),
+            effective_quantity: Number.parseFloat((quantityUsed - waste).toFixed(2)),
             has_waste: mt.has_waste,
-            current_stock: mt.current_stock ? parseFloat(String(mt.current_stock)) : null,
+            current_stock: mt.current_stock ? Number.parseFloat(String(mt.current_stock)) : null,
             transaction_id: mt.id,
             details: mt.details, // Imagen en base64 si existe
           });
@@ -383,13 +383,13 @@ export async function getDailyProduction(context: Context, req: HttpRequest): Pr
       const materials_consumed = Array.from(materialMap.values());
 
       // Asegurar que los valores sean números antes de sumar (evitar concatenación de strings)
-      const total_consumed = parseFloat(materials_consumed.reduce((sum: number, m: any) => {
-        const qty = parseFloat(String(m.quantity_used)) || 0;
+      const total_consumed = Number.parseFloat(materials_consumed.reduce((sum: number, m: any) => {
+        const qty = Number.parseFloat(String(m.quantity_used)) || 0;
         return sum + qty;
       }, 0).toFixed(2));
       
-      const total_waste = parseFloat(materials_consumed.reduce((sum: number, m: any) => {
-        const waste = parseFloat(String(m.waste)) || 0;
+      const total_waste = Number.parseFloat(materials_consumed.reduce((sum: number, m: any) => {
+        const waste = Number.parseFloat(String(m.waste)) || 0;
         return sum + waste;
       }, 0).toFixed(2));
 
@@ -546,8 +546,8 @@ export async function getProductionStats(context: Context, req: HttpRequest): Pr
 
 export async function getTransactions(context: Context, req: HttpRequest): Promise<void> {
   try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 10;
+    const page = Number.parseInt(req.query.page as string) || 1;
+    const limit = Number.parseInt(req.query.limit as string) || 10;
     const transactionType = req.query.type as string;
     const startDate = req.query.startDate as string;
     const endDate = req.query.endDate as string;
@@ -573,7 +573,7 @@ export async function getTransactions(context: Context, req: HttpRequest): Promi
 
     // Contar total (usando la query base sin select)
     const [{ count }] = await baseQuery.clone().count('t.id as count');
-    const total = parseInt(count as string);
+    const total = Number.parseInt(count as string);
 
     // Obtener datos con select y paginación
     const offset = (page - 1) * limit;
@@ -633,8 +633,8 @@ export async function getTransactions(context: Context, req: HttpRequest): Promi
  */
 export async function registerProductionMaterials(context: Context, req: HttpRequest, userId: string): Promise<void> {
   try {
-    const userIdNum = typeof userId === 'string' ? parseInt(userId, 10) : userId;
-    if (isNaN(userIdNum)) {
+    const userIdNum = typeof userId === 'string' ? Number.parseInt(userId, 10) : userId;
+    if (Number.isNaN(userIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -763,7 +763,7 @@ export async function registerProductionMaterials(context: Context, req: HttpReq
       const pendingTransactionIds: number[] = [];
       
       for (const material of materials) {
-        const wasteQuantity = parseFloat((material.waste || 0).toFixed(2)); // decimal(15,2)
+        const wasteQuantity = Number.parseFloat((material.waste || 0).toFixed(2)); // decimal(15,2)
         const hasWaste = wasteQuantity > 0;
         
         // Obtener datos del material
@@ -775,7 +775,7 @@ export async function registerProductionMaterials(context: Context, req: HttpReq
           .insert({
             id_product: material.id_product, // ID del material (materia prima)
             id_user: userIdNum,
-            quantity: parseFloat(material.quantity_used.toFixed(2)), // Cantidad usada (ej: 5.5)
+            quantity: Number.parseFloat(material.quantity_used.toFixed(2)), // Cantidad usada (ej: 5.5)
             type: 'PROD', // Tipo PROD (producción)
             direction: '-', // Dirección NEGATIVA (producción negativa = material que se ocupa/consume)
             has_waste: hasWaste, // true si waste > 0
@@ -807,7 +807,7 @@ export async function registerProductionMaterials(context: Context, req: HttpReq
         // Ejemplo: Si había 10kg y se usaron 5.5kg (con 2kg de desperdicio), queda 4.5kg
         await trx('nubestock.tb_ope_product')
           .where('id', material.id_product)
-          .decrement('quantity', parseFloat(material.quantity_used.toFixed(2)));
+          .decrement('quantity', Number.parseFloat(material.quantity_used.toFixed(2)));
       }
 
       return {
@@ -877,8 +877,8 @@ export async function registerProductionMaterials(context: Context, req: HttpReq
  */
 export async function completeProduction(context: Context, req: HttpRequest, productionId: string, userId: string): Promise<void> {
   try {
-    const productionIdNum = parseInt(productionId, 10);
-    if (isNaN(productionIdNum)) {
+    const productionIdNum = Number.parseInt(productionId, 10);
+    if (Number.isNaN(productionIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -973,10 +973,10 @@ export async function completeProduction(context: Context, req: HttpRequest, pro
     // Completar la producción: crear transacción del producto final y marcar todos los pending_transaction como inactivos
     const result = await db.transaction(async (trx) => {
       const now = new Date();
-      const userIdNum = typeof userId === 'string' ? parseInt(userId, 10) : userId;
+      const userIdNum = typeof userId === 'string' ? Number.parseInt(userId, 10) : userId;
 
       // Crear transacción PROD para el producto final (ahora sí se crea en tb_ope_transaction)
-      const finalQuantity = parseFloat(value.quantity.toFixed(2)); // decimal(15,2)
+      const finalQuantity = Number.parseFloat(value.quantity.toFixed(2)); // decimal(15,2)
 
       const [productionTransaction] = await trx('nubestock.tb_ope_transaction')
         .insert({
@@ -1090,8 +1090,8 @@ export async function completeProduction(context: Context, req: HttpRequest, pro
  */
 export async function registerProduction(context: Context, req: HttpRequest, userId: string): Promise<void> {
   try {
-    const userIdNum = typeof userId === 'string' ? parseInt(userId, 10) : userId;
-    if (isNaN(userIdNum)) {
+    const userIdNum = typeof userId === 'string' ? Number.parseInt(userId, 10) : userId;
+    if (Number.isNaN(userIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -1148,7 +1148,7 @@ export async function registerProduction(context: Context, req: HttpRequest, use
         .insert({
           id_product: value.id_product,
           id_user: currentUserId,
-          quantity: parseFloat(value.quantity.toFixed(2)), // decimal(15,2)
+          quantity: Number.parseFloat(value.quantity.toFixed(2)), // decimal(15,2)
           type: 'PROD',
           direction: '+',
           has_waste: false,
@@ -1215,8 +1215,8 @@ export async function registerProduction(context: Context, req: HttpRequest, use
 
 export async function createTransaction(context: Context, req: HttpRequest, userId: string): Promise<void> {
   try {
-    const userIdNum = typeof userId === 'string' ? parseInt(userId, 10) : userId;
-    if (isNaN(userIdNum)) {
+    const userIdNum = typeof userId === 'string' ? Number.parseInt(userId, 10) : userId;
+    if (Number.isNaN(userIdNum)) {
       context.res = {
         status: 400,
         body: {
@@ -1257,7 +1257,7 @@ export async function createTransaction(context: Context, req: HttpRequest, user
     const newTransaction = await db.create('nubestock.tb_ope_transaction', {
       id_product: value.id_product,
       id_user: value.id_user || userIdNum,
-      quantity: parseFloat(value.quantity.toFixed(2)), // decimal(15,2)
+      quantity: Number.parseFloat(value.quantity.toFixed(2)), // decimal(15,2)
       type: value.type,
       direction: value.direction,
       has_waste: false, // Se puede establecer después si es necesario
@@ -1301,8 +1301,8 @@ export async function createTransaction(context: Context, req: HttpRequest, user
 
 export async function updateProduction(context: Context, req: HttpRequest, productionId: string, userId: string): Promise<void> {
   try {
-    const productionIdNum = parseInt(productionId, 10);
-    if (isNaN(productionIdNum)) {
+    const productionIdNum = Number.parseInt(productionId, 10);
+    if (Number.isNaN(productionIdNum)) {
       context.res = {
         status: 400,
         body: {
