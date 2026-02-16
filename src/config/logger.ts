@@ -1,6 +1,12 @@
 import winston from 'winston';
 import { config } from './environment';
 
+/** True cuando la app corre en Azure Functions (no usar escritura a disco en logs/) */
+const isAzureFunctions =
+  process.env.AZURE_FUNCTIONS_ENVIRONMENT != null ||
+  process.env.WEBSITE_INSTANCE_ID != null ||
+  process.env.FUNCTIONS_WORKER_RUNTIME != null;
+
 // Configuración de formatos
 const logFormat = winston.format.combine(
   winston.format.timestamp({
@@ -35,22 +41,24 @@ transports.push(
   })
 );
 
-// Archivo (en todos los entornos)
-transports.push(
-  new winston.transports.File({
-    filename: 'logs/error.log',
-    level: 'error',
-    format: logFormat,
-    maxsize: 5242880, // 5MB
-    maxFiles: 5,
-  }),
-  new winston.transports.File({
-    filename: 'logs/combined.log',
-    format: logFormat,
-    maxsize: 5242880, // 5MB
-    maxFiles: 5,
-  })
-);
+// Archivo solo en entornos donde el filesystem permite escritura (no en Azure Functions)
+if (!isAzureFunctions) {
+  transports.push(
+    new winston.transports.File({
+      filename: 'logs/error.log',
+      level: 'error',
+      format: logFormat,
+      maxsize: 5242880, // 5MB
+      maxFiles: 5,
+    }),
+    new winston.transports.File({
+      filename: 'logs/combined.log',
+      format: logFormat,
+      maxsize: 5242880, // 5MB
+      maxFiles: 5,
+    })
+  );
+}
 
 // Crear el logger
 export const logger = winston.createLogger({
@@ -60,36 +68,40 @@ export const logger = winston.createLogger({
   exitOnError: false,
 });
 
-// Logger específico para auditoría
+// Logger específico para auditoría (solo archivo si no es Azure)
 export const auditLogger = winston.createLogger({
   level: 'info',
   format: winston.format.combine(
     winston.format.timestamp(),
     winston.format.json()
   ),
-  transports: [
-    new winston.transports.File({
-      filename: 'logs/audit.log',
-      maxsize: 10485760, // 10MB
-      maxFiles: 10,
-    }),
-  ],
+  transports: isAzureFunctions
+    ? [new winston.transports.Console({ format: logFormat })]
+    : [
+        new winston.transports.File({
+          filename: 'logs/audit.log',
+          maxsize: 10485760, // 10MB
+          maxFiles: 10,
+        }),
+      ],
 });
 
-// Logger específico para alertas
+// Logger específico para alertas (solo archivo si no es Azure)
 export const alertLogger = winston.createLogger({
   level: 'info',
   format: winston.format.combine(
     winston.format.timestamp(),
     winston.format.json()
   ),
-  transports: [
-    new winston.transports.File({
-      filename: 'logs/alerts.log',
-      maxsize: 5242880, // 5MB
-      maxFiles: 5,
-    }),
-  ],
+  transports: isAzureFunctions
+    ? [new winston.transports.Console({ format: logFormat })]
+    : [
+        new winston.transports.File({
+          filename: 'logs/alerts.log',
+          maxsize: 5242880, // 5MB
+          maxFiles: 5,
+        }),
+      ],
 });
 
 // Métodos de utilidad
