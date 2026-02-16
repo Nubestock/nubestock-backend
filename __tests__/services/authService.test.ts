@@ -39,7 +39,6 @@ describe('AuthService', () => {
       select: () => ({
         from: () => ({
           where: () => ({ first: () => Promise.resolve(null) }),
-          where: () => ({ first: () => Promise.resolve(null) }),
         }),
       }),
     });

@@ -9,29 +9,55 @@
 process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Test';
 
 // Mock global de Database: evita que cualquier módulo cree una conexión real a la BDD.
-// Soporta getConnection() (chain select/from/where/orderBy), findById, create, update, etc.
-const chainResolve = (value: any = []) => {
+// Soporta getConnection() (chain select/from/where/orderBy/leftJoin/count/offset/limit), findById, create, etc.
+function createDefaultChain(): any {
+  let isCountQuery = false;
   const chain: any = {
     select: () => chain,
     from: () => chain,
     where: () => chain,
     whereIn: () => chain,
+    whereNull: () => chain,
     orderBy: () => chain,
-    first: () => Promise.resolve(Array.isArray(value) ? (value[0] ?? null) : value),
-    insert: () => ({ returning: () => Promise.resolve(value) }),
-    update: () => ({ returning: () => Promise.resolve(value) }),
+    leftJoin: () => chain,
+    join: () => chain,
+    offset: () => chain,
+    limit: () => chain,
+    distinct: () => chain,
+    groupBy: () => chain,
+    count: () => {
+      isCountQuery = true;
+      return chain;
+    },
+    countDistinct: () => {
+      isCountQuery = true;
+      return chain;
+    },
+    clearSelect: () => chain,
+    clearOrder: () => chain,
+    clearGroup: () => chain,
+    clone: () => createDefaultChain(),
+    first: () => Promise.resolve(null),
+    insert: () => ({ returning: () => Promise.resolve([]) }),
+    update: () => ({ returning: () => Promise.resolve([]) }),
     del: () => Promise.resolve(1),
+    raw: () => chain,
   };
-  chain.then = (fn: (v: any) => any) => Promise.resolve(value).then(fn);
+  chain.then = (fn: (v: any) => any) =>
+    Promise.resolve(isCountQuery ? [{ count: '0' }] : []).then(fn);
   return chain;
-};
+}
 
-const defaultChain = chainResolve([]);
+function getConnectionMock() {
+  const chain = createDefaultChain();
+  chain.raw = () => ''; // Para db.getConnection().raw('...') en select/where
+  return chain;
+}
 
 jest.mock('../src/config/database', () => ({
   Database: {
     getInstance: () => ({
-      getConnection: () => defaultChain,
+      getConnection: () => getConnectionMock(),
       findById: () => Promise.resolve(null),
       findAll: () => Promise.resolve([]),
       create: () => Promise.resolve({ id: 1 }),

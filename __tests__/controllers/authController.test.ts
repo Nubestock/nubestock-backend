@@ -74,7 +74,7 @@ describe('authController', () => {
       mockRegister.mockResolvedValue(user);
       const context = makeContext();
       const req = makeRequest({
-        body: { name: 'Test', email: 'a@b.com', password: 'pass123', phone: '' },
+        body: { name: 'Test', email: 'a@b.com', password: 'pass1234' },
       });
       await register(context, req);
       expect(context.res!.status).toBe(201);
