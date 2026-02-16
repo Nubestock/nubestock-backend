@@ -7,8 +7,8 @@ const timestamp = () => new Date().toISOString();
 function getCorsHeaders(req: HttpRequest): Record<string, string> {
   const origin = (req.headers?.['origin'] ?? req.headers?.['Origin']) as string | undefined;
   const allowed = config.cors.origin;
-  const allowOrigin =
-    origin && (allowed.includes('*') || allowed.includes(origin)) ? origin : allowed[0] || '*';
+  // Reflejar el Origin de la petición cuando venga; así funciona sin CORS_ORIGIN en Azure.
+  const allowOrigin = origin || allowed[0] || '*';
   return {
     'Access-Control-Allow-Origin': allowOrigin,
     'Access-Control-Allow-Credentials': 'true',
