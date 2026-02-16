@@ -61,6 +61,7 @@ jobs:
       RESET_PASSWORD_PATH: ${{ secrets.RESET_PASSWORD_PATH }}
       PASSWORD_RESET_TOKEN_EXPIRY: ${{ secrets.PASSWORD_RESET_TOKEN_EXPIRY }}
       BOOTSTRAP_KEY: ${{ secrets.BOOTSTRAP_KEY }}
+      APP_KEY: ${{ secrets.APP_KEY }}
       AzureWebJobsStorage: ${{ secrets.AzureWebJobsStorage }}
       NOTIFICATION_HUB_ENABLED: ${{ secrets.NOTIFICATION_HUB_ENABLED }}
       NOTIFICATION_HUB_CONNECTION_STRING: ${{ secrets.NOTIFICATION_HUB_CONNECTION_STRING }}
