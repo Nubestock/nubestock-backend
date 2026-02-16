@@ -96,4 +96,16 @@ describe('AuthService', () => {
       expect(user.email).toBe('new@b.com');
     });
   });
+
+  describe('refreshToken', () => {
+    it('throws when token is invalid', async () => {
+      await expect(service.refreshToken('invalid-token')).rejects.toThrow();
+    });
+  });
+
+  describe('logout', () => {
+    it('completes without throwing', async () => {
+      await expect(service.logout('1')).resolves.not.toThrow();
+    });
+  });
 });
