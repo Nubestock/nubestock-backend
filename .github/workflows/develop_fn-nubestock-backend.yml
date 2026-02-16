@@ -20,9 +20,9 @@ on:
 
 jobs:
   deploy:
+    uses: Nubestock/nubestock-workflows/.github/workflows/functions-deploy-action.yml@master
     permissions:
       contents: read
-    uses: Nubestock/nubestock-workflows/.github/workflows/functions-deploy-action.yml@master
     with:
       environment: >-
         ${{
@@ -69,5 +69,4 @@ jobs:
       NOTIFICATION_HUB_CONNECTION_STRING: ${{ secrets.NOTIFICATION_HUB_CONNECTION_STRING }}
       NOTIFICATION_HUB_NAME: ${{ secrets.NOTIFICATION_HUB_NAME }}
       NOTIFICATION_HUB_INTERNAL_KEY: ${{ secrets.NOTIFICATION_HUB_INTERNAL_KEY }}
-      # Opcional: si existe, se ejecuta el step de Sonar (ver docs/SONAR.md)
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

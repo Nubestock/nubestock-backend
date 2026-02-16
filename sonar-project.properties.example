@@ -1,5 +1,8 @@
 # SonarQube / SonarCloud — copia a sonar-project.properties y ajusta valores
 # Los tests generan: coverage (tabla + lcov) y reporte JUnit para Sonar.
+#
+# Para que el pipeline ejecute Sonar: en el environment (p. ej. NUBESTOCK_DEV),
+# crear variable RUN_SONAR = 'true' y secret SONAR_TOKEN (token de SonarCloud).
 
 # Claves del proyecto (SonarCloud: organization.key)
 # sonar.projectKey=nubestock-backend
