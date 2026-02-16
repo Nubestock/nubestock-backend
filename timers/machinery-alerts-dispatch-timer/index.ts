@@ -1,6 +1,6 @@
-import { AzureFunction, Context } from '../src/types/azure-functions';
-import { logger } from '../src/config/logger';
-import { sendPendingMaintenanceAlerts } from '../src/services/machineryAlertService';
+import { AzureFunction, Context } from '../../src/types/azure-functions';
+import { logger } from '../../src/config/logger';
+import { sendPendingMaintenanceAlerts } from '../../src/services/machineryAlertService';
 
 /**
  * Timer Trigger que envía alertas pendientes cada 10 minutos

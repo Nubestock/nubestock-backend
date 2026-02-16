@@ -1,6 +1,6 @@
-import { AzureFunction, Context } from '../src/types/azure-functions';
-import { detectMaintenanceAlerts } from '../src/services/machineryAlertService';
-import { logger } from '../src/config/logger';
+import { AzureFunction, Context } from '../../src/types/azure-functions';
+import { detectMaintenanceAlerts } from '../../src/services/machineryAlertService';
+import { logger } from '../../src/config/logger';
 
 /**
  * Timer Trigger que ejecuta la detección de alertas de mantenimiento cada 50 minutos
