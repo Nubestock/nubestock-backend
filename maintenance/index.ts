@@ -1,7 +1,7 @@
 import { AzureFunction, Context, HttpRequest } from '../src/types/azure-functions';
 import { logger } from '../src/config/logger';
 import { logErrorResponse } from '../src/utils/httpLogger';
-import { badRequest, methodNotAllowed, requireAppKey } from '../src/utils/httpResponses';
+import { badRequest, methodNotAllowed, requireAppKey, optionsOk, addCorsToResponse } from '../src/utils/httpResponses';
 import { requireAuth, requireAnyPermission } from '../src/middleware/authMiddleware';
 import * as maintenanceController from '../src/controllers/maintenanceController';
 
@@ -152,6 +152,7 @@ const maintenanceHandler: AzureFunction = async (context: Context, req: HttpRequ
       },
     };
   } finally {
+    addCorsToResponse(context, req);
     logErrorResponse(context, req, 'maintenance');
   }
 };

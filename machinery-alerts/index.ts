@@ -1,7 +1,7 @@
 import { AzureFunction, Context, HttpRequest } from '../src/types/azure-functions';
 import { logger } from '../src/config/logger';
 import { logErrorResponse } from '../src/utils/httpLogger';
-import { badRequest, methodNotAllowed, requireAppKey } from '../src/utils/httpResponses';
+import { badRequest, methodNotAllowed, requireAppKey, optionsOk, addCorsToResponse } from '../src/utils/httpResponses';
 import { requireAuth, requireAnyPermission } from '../src/middleware/authMiddleware';
 import * as machineryAlertController from '../src/controllers/machineryAlertController';
 import * as machineryAlertService from '../src/services/machineryAlertService';
@@ -199,6 +199,7 @@ const machineryAlertsHandler: AzureFunction = async (context: Context, req: Http
       },
     };
   } finally {
+    addCorsToResponse(context, req);
     logErrorResponse(context, req, 'machinery-alerts');
   }
 };

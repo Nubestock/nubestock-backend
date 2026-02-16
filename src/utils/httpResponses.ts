@@ -22,6 +22,28 @@ function withCors<T extends { headers?: Record<string, string> }>(res: T, req: H
 }
 
 /**
+ * Añade las cabeceras CORS a context.res. Debe llamarse para toda respuesta HTTP
+ * cuando el front llama desde otro origen (p. ej. SWA).
+ */
+export function addCorsToResponse(context: Context, req: HttpRequest): void {
+  if (!context.res) return;
+  const headers = getCorsHeaders(req);
+  context.res.headers = { ...headers, ...context.res.headers };
+}
+
+/**
+ * Respuesta 204 para preflight OPTIONS. El navegador envía OPTIONS antes de POST/GET
+ * cross-origin; sin esta respuesta con CORS, el preflight falla y no se envía el request real.
+ */
+export function optionsOk(context: Context, req: HttpRequest): void {
+  context.res = {
+    status: 204,
+    body: undefined,
+    headers: getCorsHeaders(req),
+  };
+}
+
+/**
  * Respuesta 400 Bad Request - estandarizada para todas las funciones.
  */
 export function badRequest(context: Context, message: string, errors?: unknown): void {

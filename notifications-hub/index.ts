@@ -2,7 +2,7 @@ import { AzureFunction, Context, HttpRequest } from '../src/types/azure-function
 import Joi from 'joi';
 import { logger } from '../src/config/logger';
 import { logErrorResponse } from '../src/utils/httpLogger';
-import { badRequest, methodNotAllowed, requireAppKey } from '../src/utils/httpResponses';
+import { badRequest, methodNotAllowed, requireAppKey, optionsOk, addCorsToResponse } from '../src/utils/httpResponses';
 import { config } from '../src/config/environment';
 import { registerInstallation, sendAlertNotification } from '../src/services/notificationHubService';
 
@@ -135,6 +135,7 @@ const notificationsHubHandler: AzureFunction = async (context: Context, req: Htt
       },
     };
   } finally {
+    addCorsToResponse(context, req);
     logErrorResponse(context, req, 'notifications-hub');
   }
 };

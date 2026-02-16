@@ -1,7 +1,7 @@
 import { AzureFunction, Context, HttpRequest } from '../src/types/azure-functions';
 import { logger } from '../src/config/logger';
 import { logErrorResponse } from '../src/utils/httpLogger';
-import { badRequest, methodNotAllowed, requireAppKey } from '../src/utils/httpResponses';
+import { badRequest, methodNotAllowed, requireAppKey, optionsOk, addCorsToResponse } from '../src/utils/httpResponses';
 import { requireAuth } from '../src/middleware/authMiddleware';
 import * as locationController from '../src/controllers/locationController';
 
@@ -133,6 +133,10 @@ const routes: Record<string, Record<string, Handler>> = {
 
 const locationsHandler: AzureFunction = async (context: Context, req: HttpRequest): Promise<void> => {
   try {
+    if (req.method === 'OPTIONS') {
+      optionsOk(context, req);
+      return;
+    }
     if (!requireAppKey(context, req)) return;
     const { action } = req.params;
     const method = req.method || 'GET';
@@ -186,6 +190,7 @@ const locationsHandler: AzureFunction = async (context: Context, req: HttpReques
       },
     };
   } finally {
+    addCorsToResponse(context, req);
     logErrorResponse(context, req, 'locations');
   }
 };

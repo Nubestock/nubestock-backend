@@ -1,7 +1,7 @@
 import { AzureFunction, Context, HttpRequest } from '../src/types/azure-functions';
 import { logger } from '../src/config/logger';
 import { logErrorResponse } from '../src/utils/httpLogger';
-import { badRequest, methodNotAllowed, requireAppKey } from '../src/utils/httpResponses';
+import { badRequest, methodNotAllowed, requireAppKey, optionsOk, addCorsToResponse } from '../src/utils/httpResponses';
 import { requireAuth, requireAnyPermission } from '../src/middleware/authMiddleware';
 import * as productController from '../src/controllers/productController';
 import * as categoryController from '../src/controllers/categoryController';
@@ -86,6 +86,10 @@ const methodPermissions: Record<string, string[]> = {
 
 const productsHandler: AzureFunction = async (context: Context, req: HttpRequest): Promise<void> => {
   try {
+    if (req.method === 'OPTIONS') {
+      optionsOk(context, req);
+      return;
+    }
     if (!requireAppKey(context, req)) return;
     const { action, subaction } = req.params;
     const method = req.method || 'GET';
@@ -176,6 +180,7 @@ const productsHandler: AzureFunction = async (context: Context, req: HttpRequest
       },
     };
   } finally {
+    addCorsToResponse(context, req);
     logErrorResponse(context, req, 'products');
   }
 };

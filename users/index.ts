@@ -1,7 +1,7 @@
 import { AzureFunction, Context, HttpRequest } from '../src/types/azure-functions';
 import { logger } from '../src/config/logger';
 import { logErrorResponse } from '../src/utils/httpLogger';
-import { badRequest, methodNotAllowed, requireAppKey } from '../src/utils/httpResponses';
+import { badRequest, methodNotAllowed, requireAppKey, optionsOk, addCorsToResponse } from '../src/utils/httpResponses';
 import { requireAuth, requireAnyPermission } from '../src/middleware/authMiddleware';
 import * as userController from '../src/controllers/userController';
 
@@ -63,6 +63,10 @@ const routes: Record<string, Record<string, Handler>> = {
 
 const usersHandler: AzureFunction = async (context: Context, req: HttpRequest): Promise<void> => {
   try {
+    if (req.method === 'OPTIONS') {
+      optionsOk(context, req);
+      return;
+    }
     if (!requireAppKey(context, req)) return;
     const { action } = req.params;
     const method = req.method || 'GET';
@@ -134,6 +138,7 @@ const usersHandler: AzureFunction = async (context: Context, req: HttpRequest): 
       },
     };
   } finally {
+    addCorsToResponse(context, req);
     logErrorResponse(context, req, 'users');
   }
 };

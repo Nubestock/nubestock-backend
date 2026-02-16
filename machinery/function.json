@@ -1,1 +1,1 @@
-{"bindings":[{"authLevel":"function","type":"httpTrigger","direction":"in","name":"req","methods":["get","post","put","delete"],"route":"machinery/{action?}"},{"type":"http","direction":"out","name":"res"}],"scriptFile":"../dist/machinery/index.js"}
+{"bindings":[{"authLevel":"function","type":"httpTrigger","direction":"in","name":"req","methods":["get","post","put","delete","options"],"route":"machinery/{action?}"},{"type":"http","direction":"out","name":"res"}],"scriptFile":"../dist/machinery/index.js"}

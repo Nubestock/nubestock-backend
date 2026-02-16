@@ -2,10 +2,15 @@ import { AzureFunction, Context, HttpRequest } from '../src/types/azure-function
 import { Database } from '../src/config/database';
 import { logger } from '../src/config/logger';
 import { logErrorResponse } from '../src/utils/httpLogger';
+import { optionsOk, addCorsToResponse } from '../src/utils/httpResponses';
 
 const db = Database.getInstance();
 
 const healthcheckHandler: AzureFunction = async (context: Context, req: HttpRequest): Promise<void> => {
+  if (req.method === 'OPTIONS') {
+    optionsOk(context, req);
+    return;
+  }
   const startTime = Date.now();
   const healthStatus: any = {
     status: 'healthy',
@@ -107,6 +112,7 @@ const healthcheckHandler: AzureFunction = async (context: Context, req: HttpRequ
       }
     };
   } finally {
+    addCorsToResponse(context, req);
     logErrorResponse(context, req, 'healthcheck');
   }
 };

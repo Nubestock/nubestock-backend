@@ -1,7 +1,7 @@
 import { AzureFunction, Context, HttpRequest } from '../src/types/azure-functions';
 import { logger } from '../src/config/logger';
 import { logErrorResponse } from '../src/utils/httpLogger';
-import { badRequest, methodNotAllowed, requireAppKey } from '../src/utils/httpResponses';
+import { badRequest, methodNotAllowed, requireAppKey, optionsOk, addCorsToResponse } from '../src/utils/httpResponses';
 import { requireAuth, requireAnyPermission } from '../src/middleware/authMiddleware';
 import * as productionController from '../src/controllers/productionController';
 
@@ -234,6 +234,7 @@ const productionHandler: AzureFunction = async (context: Context, req: HttpReque
       },
     };
   } finally {
+    addCorsToResponse(context, req);
     logErrorResponse(context, req, 'production');
   }
 };

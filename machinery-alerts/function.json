@@ -1,18 +1,1 @@
-{
-  "bindings": [
-    {
-      "authLevel": "function",
-      "type": "httpTrigger",
-      "direction": "in",
-      "name": "req",
-      "methods": ["get", "post", "put"],
-      "route": "machinery-alerts/{action?}"
-    },
-    {
-      "type": "http",
-      "direction": "out",
-      "name": "res"
-    }
-  ],
-  "scriptFile": "../dist/machinery-alerts/index.js"
-}
+{"bindings":[{"authLevel":"function","type":"httpTrigger","direction":"in","name":"req","methods":["get","post","put","options"],"route":"machinery-alerts/{action?}"},{"type":"http","direction":"out","name":"res"}],"scriptFile":"../dist/machinery-alerts/index.js"}

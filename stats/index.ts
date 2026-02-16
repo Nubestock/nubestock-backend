@@ -2,7 +2,7 @@ import { AzureFunction, Context, HttpRequest } from '../src/types/azure-function
 import { Database } from '../src/config/database';
 import { logger } from '../src/config/logger';
 import { logErrorResponse } from '../src/utils/httpLogger';
-import { requireAppKey } from '../src/utils/httpResponses';
+import { requireAppKey, optionsOk, addCorsToResponse } from '../src/utils/httpResponses';
 import { requireAuth, requireAnyPermission } from '../src/middleware/authMiddleware';
 import { DetailedStatsResponse } from '../src/interfaces';
 
@@ -533,6 +533,7 @@ const statsHandler: AzureFunction = async (context: Context, req: HttpRequest): 
       },
     };
   } finally {
+    addCorsToResponse(context, req);
     logErrorResponse(context, req, 'stats');
   }
 };

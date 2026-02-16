@@ -1,7 +1,7 @@
 import { AzureFunction, Context, HttpRequest } from '../src/types/azure-functions';
 import { logger } from '../src/config/logger';
 import { logErrorResponse } from '../src/utils/httpLogger';
-import { badRequest, methodNotAllowed, requireAppKey } from '../src/utils/httpResponses';
+import { badRequest, methodNotAllowed, requireAppKey, optionsOk, addCorsToResponse } from '../src/utils/httpResponses';
 import { requireAuth, requireAnyPermission } from '../src/middleware/authMiddleware';
 import * as clientController from '../src/controllers/clientController';
 import * as bulkController from '../src/controllers/bulkController';
@@ -135,6 +135,7 @@ const clientsHandler: AzureFunction = async (context: Context, req: HttpRequest)
       },
     };
   } finally {
+    addCorsToResponse(context, req);
     logErrorResponse(context, req, 'clients');
   }
 };

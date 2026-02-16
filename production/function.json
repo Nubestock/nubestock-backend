@@ -1,18 +1,1 @@
-{
-  "bindings": [
-    {
-      "authLevel": "function",
-      "type": "httpTrigger",
-      "direction": "in",
-      "name": "req",
-      "methods": ["get", "post", "put"],
-      "route": "production/{action?}/{subaction?}"
-    },
-    {
-      "type": "http",
-      "direction": "out",
-      "name": "res"
-    }
-  ],
-  "scriptFile": "../dist/production/index.js"
-}
+{"bindings":[{"authLevel":"function","type":"httpTrigger","direction":"in","name":"req","methods":["get","post","put","options"],"route":"production/{action?}/{subaction?}"},{"type":"http","direction":"out","name":"res"}],"scriptFile":"../dist/production/index.js"}

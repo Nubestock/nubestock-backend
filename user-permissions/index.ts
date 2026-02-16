@@ -1,7 +1,7 @@
 import { AzureFunction, Context, HttpRequest } from '../src/types/azure-functions';
 import { logger } from '../src/config/logger';
 import { logErrorResponse } from '../src/utils/httpLogger';
-import { badRequest, methodNotAllowed, requireAppKey } from '../src/utils/httpResponses';
+import { badRequest, methodNotAllowed, requireAppKey, optionsOk, addCorsToResponse } from '../src/utils/httpResponses';
 import { requireAuth } from '../src/middleware/authMiddleware';
 import * as userPermissionController from '../src/controllers/userPermissionController';
 
@@ -104,6 +104,7 @@ const userPermissionsHandler: AzureFunction = async (context: Context, req: Http
       },
     };
   } finally {
+    addCorsToResponse(context, req);
     logErrorResponse(context, req, 'user-permissions');
   }
 };
