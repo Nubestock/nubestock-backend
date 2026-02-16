@@ -47,6 +47,7 @@ coverage/
 
 # Testing
 jest-junit.xml
+test-results/
 
 # Caches
 .cache/

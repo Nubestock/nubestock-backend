@@ -1,0 +1,20 @@
+# SonarQube / SonarCloud — copia a sonar-project.properties y ajusta valores
+# Los tests generan: coverage (tabla + lcov) y reporte JUnit para Sonar.
+
+# Claves del proyecto (SonarCloud: organization.key)
+# sonar.projectKey=nubestock-backend
+# sonar.organization=tu-org
+
+# Rutas de código y exclusiones
+sonar.sources=src
+sonar.exclusions=**/node_modules/,**/dist/,**/__tests__/,**/*.d.ts,**/types/**
+
+# Cobertura (generada por Jest: npm test)
+sonar.javascript.lcov.reportPaths=coverage/lcov.info
+
+# Resultados de tests JUnit (generados por jest-junit)
+sonar.testExecutionReportPaths=test-results/junit.xml
+
+# Tests (opcional: carpeta de tests para “tests” en Sonar)
+sonar.tests=__tests__
+sonar.test.inclusions=**/__tests__/**/*.test.ts
