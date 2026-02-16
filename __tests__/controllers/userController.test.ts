@@ -1,4 +1,3 @@
-jest.mock('../../src/config/logger', () => ({ logger: { error: jest.fn(), info: jest.fn() } }));
 import { listUsers } from '../../src/controllers/userController';
 import { makeContext, makeRequest } from '../helpers/context';
 

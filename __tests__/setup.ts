@@ -8,6 +8,18 @@
 
 process.env.AZURE_FUNCTIONS_ENVIRONMENT = 'Test';
 
+// Mock global del logger: evita que módulos como emailService fallen al llamar logger.warn/debug
+const noop = jest.fn();
+jest.mock('../src/config/logger', () => ({
+  logger: {
+    error: noop,
+    info: noop,
+    warn: noop,
+    debug: noop,
+    child: () => ({ error: noop, info: noop, warn: noop, debug: noop }),
+  },
+}));
+
 // Mock global de Database: evita que cualquier módulo cree una conexión real a la BDD.
 // Soporta getConnection() (chain select/from/where/orderBy/leftJoin/count/offset/limit), findById, create, etc.
 function createDefaultChain(): any {
