@@ -1,6 +1,7 @@
 import { AzureFunction, Context, HttpRequest } from '../src/types/azure-functions';
 import { logger } from '../src/config/logger';
 import { logErrorResponse } from '../src/utils/httpLogger';
+import { badRequest, methodNotAllowed, requireAppKey } from '../src/utils/httpResponses';
 import { requireAuth, requireAnyPermission } from '../src/middleware/authMiddleware';
 import { config } from '../src/config/environment';
 import * as roleController from '../src/controllers/roleController';
@@ -21,28 +22,6 @@ function isBootstrapMode(req: HttpRequest): boolean {
          providedBootstrapKey === config.security.bootstrapKey;
 }
 
-// Helpers para respuestas comunes
-function badRequest(context: Context, message: string): void {
-  context.res = {
-    status: 400,
-    body: {
-      success: false,
-      message,
-      timestamp: new Date().toISOString(),
-    },
-  };
-}
-
-function methodNotAllowed(context: Context): void {
-  context.res = {
-    status: 405,
-    body: {
-      success: false,
-      message: 'Método no permitido',
-      timestamp: new Date().toISOString(),
-    },
-  };
-}
 
 // Wrappers para handlers que requieren validación de ID
 const getRoleHandler: Handler = async (ctx, req, action) => {
@@ -101,6 +80,7 @@ const routes: Record<string, Record<string, Handler>> = {
 
 const rolesHandler: AzureFunction = async (context: Context, req: HttpRequest): Promise<void> => {
   try {
+    if (!requireAppKey(context, req)) return;
     const { action } = req.params;
     const method = req.method || 'GET';
 

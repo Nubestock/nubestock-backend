@@ -1,34 +1,12 @@
 import { AzureFunction, Context, HttpRequest } from '../src/types/azure-functions';
 import { logger } from '../src/config/logger';
 import { logErrorResponse } from '../src/utils/httpLogger';
+import { badRequest, methodNotAllowed, requireAppKey } from '../src/utils/httpResponses';
 import { requireAuth, requireAnyPermission } from '../src/middleware/authMiddleware';
 import * as productionController from '../src/controllers/productionController';
 
 // Tipo para los handlers de rutas (con subaction para rutas anidadas)
 type Handler = (context: Context, req: HttpRequest, action?: string, subaction?: string) => Promise<void>;
-
-// Helpers para respuestas comunes
-function badRequest(context: Context, message: string): void {
-  context.res = {
-    status: 400,
-    body: {
-      success: false,
-      message,
-      timestamp: new Date().toISOString(),
-    },
-  };
-}
-
-function methodNotAllowed(context: Context): void {
-  context.res = {
-    status: 405,
-    body: {
-      success: false,
-      message: 'Método no permitido',
-      timestamp: new Date().toISOString(),
-    },
-  };
-}
 
 // Wrappers para handlers que manejan userId del token
 const registerProductionHandler: Handler = async (ctx, req, action) => {
@@ -156,6 +134,7 @@ const routes: Record<string, Record<string, Handler>> = {
 
 const productionHandler: AzureFunction = async (context: Context, req: HttpRequest): Promise<void> => {
   try {
+    if (!requireAppKey(context, req)) return;
     const { action, subaction } = req.params;
     const method = req.method || 'GET';
 

@@ -1,6 +1,7 @@
 import { AzureFunction, Context, HttpRequest } from '../src/types/azure-functions';
 import { logger } from '../src/config/logger';
 import { logErrorResponse } from '../src/utils/httpLogger';
+import { requireAppKey } from '../src/utils/httpResponses';
 import * as authController from '../src/controllers/authController';
 
 // Tipo para los handlers de rutas
@@ -31,6 +32,7 @@ const routes: Record<string, Handler> = {
 
 const authHandler: AzureFunction = async (context: Context, req: HttpRequest): Promise<void> => {
   try {
+    if (!requireAppKey(context, req)) return;
     const { action } = req.params;
     
     logger.info('Auth function triggered', {

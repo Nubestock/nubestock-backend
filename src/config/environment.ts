@@ -84,6 +84,8 @@ export const config = {
     lockoutDuration: parseInt(process.env.LOCKOUT_DURATION || '300000'),
     passwordResetTokenExpiry: parseInt(process.env.PASSWORD_RESET_TOKEN_EXPIRY || '3600000'),
     bootstrapKey: process.env.BOOTSTRAP_KEY || '',
+    /** Clave de la App (query param ?code=). Si no se envía o no coincide, las funciones responden 401. */
+    appKey: process.env.APP_KEY || '',
   },
 
   // Configuración de email (Azure Communication Services)

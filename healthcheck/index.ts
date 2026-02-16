@@ -2,10 +2,12 @@ import { AzureFunction, Context, HttpRequest } from '../src/types/azure-function
 import { Database } from '../src/config/database';
 import { logger } from '../src/config/logger';
 import { logErrorResponse } from '../src/utils/httpLogger';
+import { requireAppKey } from '../src/utils/httpResponses';
 
 const db = Database.getInstance();
 
 const healthcheckHandler: AzureFunction = async (context: Context, req: HttpRequest): Promise<void> => {
+  if (!requireAppKey(context, req)) return;
   const startTime = Date.now();
   const healthStatus: any = {
     status: 'healthy',

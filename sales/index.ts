@@ -1,6 +1,7 @@
 import { AzureFunction, Context, HttpRequest } from '../src/types/azure-functions';
 import { logger } from '../src/config/logger';
 import { logErrorResponse } from '../src/utils/httpLogger';
+import { badRequest, methodNotAllowed, requireAppKey } from '../src/utils/httpResponses';
 import { requireAuth, requireAnyPermission } from '../src/middleware/authMiddleware';
 import * as saleController from '../src/controllers/saleController';
 import { 
@@ -12,29 +13,6 @@ import {
 
 // Tipo para los handlers de rutas
 type Handler = (context: Context, req: HttpRequest, action?: string, subaction?: string) => Promise<void>;
-
-// Helpers para respuestas comunes
-function badRequest(context: Context, message: string): void {
-  context.res = {
-    status: 400,
-    body: {
-      success: false,
-      message,
-      timestamp: new Date().toISOString(),
-    },
-  };
-}
-
-function methodNotAllowed(context: Context): void {
-  context.res = {
-    status: 405,
-    body: {
-      success: false,
-      message: 'Método no permitido',
-      timestamp: new Date().toISOString(),
-    },
-  };
-}
 
 // Wrappers para handlers que requieren userId del token
 const createSaleHandler: Handler = async (ctx, req, action) => {
@@ -118,6 +96,7 @@ const routes: Record<string, Record<string, Handler>> = {
 
 const salesHandler: AzureFunction = async (context: Context, req: HttpRequest): Promise<void> => {
   try {
+    if (!requireAppKey(context, req)) return;
     const { action, subaction } = req.params;
     const method = req.method || 'GET';
     

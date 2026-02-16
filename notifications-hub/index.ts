@@ -2,33 +2,11 @@ import { AzureFunction, Context, HttpRequest } from '../src/types/azure-function
 import Joi from 'joi';
 import { logger } from '../src/config/logger';
 import { logErrorResponse } from '../src/utils/httpLogger';
+import { badRequest, methodNotAllowed, requireAppKey } from '../src/utils/httpResponses';
 import { config } from '../src/config/environment';
 import { registerInstallation, sendAlertNotification } from '../src/services/notificationHubService';
 
 type Handler = (context: Context, req: HttpRequest, action?: string) => Promise<void>;
-
-function badRequest(context: Context, message: string, errors?: any): void {
-  context.res = {
-    status: 400,
-    body: {
-      success: false,
-      message,
-      errors,
-      timestamp: new Date().toISOString(),
-    },
-  };
-}
-
-function methodNotAllowed(context: Context): void {
-  context.res = {
-    status: 405,
-    body: {
-      success: false,
-      message: 'Método no permitido',
-      timestamp: new Date().toISOString(),
-    },
-  };
-}
 
 function isInternalAuthorized(req: HttpRequest): boolean {
   const internalKey = config.notifications.notificationHubInternalKey;
@@ -110,6 +88,7 @@ const routes: Record<string, Record<string, Handler>> = {
 
 const notificationsHubHandler: AzureFunction = async (context: Context, req: HttpRequest): Promise<void> => {
   try {
+    if (!requireAppKey(context, req)) return;
     const { action } = req.params;
     const method = req.method || 'POST';
 

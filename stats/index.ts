@@ -2,6 +2,7 @@ import { AzureFunction, Context, HttpRequest } from '../src/types/azure-function
 import { Database } from '../src/config/database';
 import { logger } from '../src/config/logger';
 import { logErrorResponse } from '../src/utils/httpLogger';
+import { requireAppKey } from '../src/utils/httpResponses';
 import { requireAuth, requireAnyPermission } from '../src/middleware/authMiddleware';
 import { DetailedStatsResponse } from '../src/interfaces';
 
@@ -9,6 +10,7 @@ const db = Database.getInstance();
 
 const statsHandler: AzureFunction = async (context: Context, req: HttpRequest): Promise<void> => {
   try {
+    if (!requireAppKey(context, req)) return;
     // Verificar autenticación y permisos (stats requiere permiso de lectura general o admin)
     const authResult = requireAnyPermission(req, ['stats_read', 'admin', 'users_manage']);
     if (!authResult.success) {
