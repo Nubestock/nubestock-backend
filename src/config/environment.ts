@@ -63,9 +63,10 @@ export const config = {
     file: process.env.LOG_FILE || 'logs/app.log',
   },
 
-  // Configuración de CORS
+  // Configuración de CORS (origen exacto obligatorio si el front envía credenciales; * no vale)
   cors: {
-    origin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3000'],
+    origin: process.env.CORS_ORIGIN?.split(',').map((o) => o.trim()).filter(Boolean) ||
+      (process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : ['http://localhost:3000']),
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
