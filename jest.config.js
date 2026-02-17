@@ -62,6 +62,6 @@ module.exports = {
   },
   setupFilesAfterEnv: ['<rootDir>/__tests__/setup.ts'],
   transform: {
-    '^.+\\.tsx?$': ['ts-jest', { tsconfig: { module: 'commonjs' } }],
+    '^.+\\.tsx?$': ['ts-jest', { tsconfig: 'tsconfig.test.json' }],
   },
 };

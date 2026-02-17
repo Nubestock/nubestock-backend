@@ -5,38 +5,109 @@ import Joi from 'joi';
 
 const db = Database.getInstance();
 
+// Helper functions to reduce code duplication
+
+function validateMeasureIdRequired(context: Context, measureId: string | undefined): string | null {
+  if (!measureId) {
+    context.res = {
+      status: 400,
+      body: {
+        success: false,
+        message: 'ID de medida requerido',
+        timestamp: new Date().toISOString(),
+      },
+    };
+    return null;
+  }
+  return measureId;
+}
+
+function validateMeasureId(context: Context, measureId: string): number | null {
+  const measureIdNum = Number.parseInt(measureId, 10);
+  if (Number.isNaN(measureIdNum)) {
+    context.res = {
+      status: 400,
+      body: {
+        success: false,
+        message: 'ID de medida inválido',
+        timestamp: new Date().toISOString(),
+      },
+    };
+    return null;
+  }
+  return measureIdNum;
+}
+
+async function findAndValidateMeasure(context: Context, measureIdNum: number, checkActive: boolean = false): Promise<any | null> {
+  const measure = await db.findById('nubestock.tb_mae_measure', measureIdNum);
+  
+  if (!measure || (checkActive && !(measure as any).is_active)) {
+    context.res = {
+      status: 404,
+      body: {
+        success: false,
+        message: 'Medida no encontrada',
+        timestamp: new Date().toISOString(),
+      },
+    };
+    return null;
+  }
+  return measure;
+}
+
+function validateSchema(context: Context, schema: Joi.ObjectSchema, data: any): any | null {
+  const { error, value } = schema.validate(data);
+  if (error) {
+    context.res = {
+      status: 400,
+      body: {
+        success: false,
+        message: 'Datos de entrada inválidos',
+        errors: error.details.map(detail => ({
+          field: detail.path[0],
+          message: detail.message,
+        })),
+        timestamp: new Date().toISOString(),
+      },
+    };
+    return null;
+  }
+  return value;
+}
+
+function createErrorResponse(status: number, message: string): { status: number; body: any } {
+  return {
+    status,
+    body: {
+      success: false,
+      message,
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
+
+function handleError(context: Context, error: any, operation: string): void {
+  logger.error(`Error al ${operation}:`, error);
+  context.res = {
+    status: 500,
+    body: {
+      success: false,
+      message: `Error al ${operation}`,
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
+
 export async function listMeasures(context: Context, req: HttpRequest): Promise<void> {
   try {
     const measureId = req.query.id as string;
     
     if (measureId) {
-      // Obtener medida específica por ID
-      const measureIdNum = Number.parseInt(measureId, 10);
-      if (Number.isNaN(measureIdNum)) {
-        context.res = {
-          status: 400,
-          body: {
-            success: false,
-            message: 'ID de medida inválido',
-            timestamp: new Date().toISOString(),
-          },
-        };
-        return;
-      }
+      const measureIdNum = validateMeasureId(context, measureId);
+      if (measureIdNum === null) return;
 
-      const measure = await db.findById('nubestock.tb_mae_measure', measureIdNum);
-      
-      if (!measure || !(measure as any).is_active) {
-        context.res = {
-          status: 404,
-          body: {
-            success: false,
-            message: 'Medida no encontrada',
-            timestamp: new Date().toISOString(),
-          },
-        };
-        return;
-      }
+      const measure = await findAndValidateMeasure(context, measureIdNum, true);
+      if (!measure) return;
 
       context.res = {
         status: 200,
@@ -64,15 +135,7 @@ export async function listMeasures(context: Context, req: HttpRequest): Promise<
       };
     }
   } catch (error) {
-    logger.error('Error al obtener medidas:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al obtener medidas',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'obtener medidas');
   }
 }
 
@@ -137,45 +200,17 @@ export async function createMeasure(context: Context, req: HttpRequest): Promise
       },
     };
   } catch (error) {
-    logger.error('Error al crear medida:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al crear medida',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'crear medida');
   }
 }
 
 export async function updateMeasure(context: Context, req: HttpRequest): Promise<void> {
   try {
-    const measureId = req.query.id as string;
-    if (!measureId) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'ID de medida requerido',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const measureId = validateMeasureIdRequired(context, req.query.id as string);
+    if (measureId === null) return;
 
-    const measureIdNum = Number.parseInt(measureId, 10);
-    if (Number.isNaN(measureIdNum)) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'ID de medida inválido',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const measureIdNum = validateMeasureId(context, measureId);
+    if (measureIdNum === null) return;
 
     const measureSchema = Joi.object({
       name: Joi.string().min(1).max(5).optional(),
@@ -183,36 +218,11 @@ export async function updateMeasure(context: Context, req: HttpRequest): Promise
       is_active: Joi.boolean().optional(),
     });
 
-    const { error, value } = measureSchema.validate(req.body);
-    if (error) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'Datos de entrada inválidos',
-          errors: error.details.map(detail => ({
-            field: detail.path[0],
-            message: detail.message,
-          })),
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const value = validateSchema(context, measureSchema, req.body);
+    if (value === null) return;
 
-    // Verificar que la medida existe
-    const existingMeasure = await db.findById('nubestock.tb_mae_measure', measureIdNum);
-    if (!existingMeasure) {
-      context.res = {
-        status: 404,
-        body: {
-          success: false,
-          message: 'Medida no encontrada',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const existingMeasure = await findAndValidateMeasure(context, measureIdNum);
+    if (!existingMeasure) return;
 
     // Si se está actualizando el nombre, verificar que no exista otra medida con ese nombre
     if (value.name && value.name !== (existingMeasure as any).name) {
@@ -224,14 +234,7 @@ export async function updateMeasure(context: Context, req: HttpRequest): Promise
         .first();
 
       if (duplicateMeasure) {
-        context.res = {
-          status: 400,
-          body: {
-            success: false,
-            message: 'Ya existe otra medida con ese nombre',
-            timestamp: new Date().toISOString(),
-          },
-        };
+        context.res = createErrorResponse(400, 'Ya existe otra medida con ese nombre');
         return;
       }
     }
@@ -277,45 +280,14 @@ export async function updateMeasure(context: Context, req: HttpRequest): Promise
 
 export async function deleteMeasure(context: Context, req: HttpRequest): Promise<void> {
   try {
-    const measureId = req.query.id as string;
-    if (!measureId) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'ID de medida requerido',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const measureId = validateMeasureIdRequired(context, req.query.id as string);
+    if (measureId === null) return;
 
-    const measureIdNum = Number.parseInt(measureId, 10);
-    if (Number.isNaN(measureIdNum)) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'ID de medida inválido',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const measureIdNum = validateMeasureId(context, measureId);
+    if (measureIdNum === null) return;
 
-    // Verificar que la medida existe
-    const existingMeasure = await db.findById('nubestock.tb_mae_measure', measureIdNum);
-    if (!existingMeasure) {
-      context.res = {
-        status: 404,
-        body: {
-          success: false,
-          message: 'Medida no encontrada',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const existingMeasure = await findAndValidateMeasure(context, measureIdNum);
+    if (!existingMeasure) return;
 
     // Verificar si hay productos usando esta medida
     const productsUsingMeasure = await db.getConnection()
@@ -327,14 +299,7 @@ export async function deleteMeasure(context: Context, req: HttpRequest): Promise
       .first();
 
     if (productsUsingMeasure) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'No se puede eliminar la medida porque hay productos asociados a ella',
-          timestamp: new Date().toISOString(),
-        },
-      };
+      context.res = createErrorResponse(400, 'No se puede eliminar la medida porque hay productos asociados a ella');
       return;
     }
 
@@ -354,14 +319,6 @@ export async function deleteMeasure(context: Context, req: HttpRequest): Promise
       },
     };
   } catch (error) {
-    logger.error('Error al eliminar medida:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al eliminar medida',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'eliminar medida');
   }
 }

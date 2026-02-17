@@ -5,6 +5,99 @@ import Joi from 'joi';
 
 const db = Database.getInstance();
 
+// Helper functions to reduce code duplication
+
+function validateOriginIdRequired(context: Context, originId: string | undefined): string | null {
+  if (!originId) {
+    context.res = {
+      status: 400,
+      body: {
+        success: false,
+        message: 'ID de origen requerido',
+        timestamp: new Date().toISOString(),
+      },
+    };
+    return null;
+  }
+  return originId;
+}
+
+function validateOriginId(context: Context, originId: string): number | null {
+  const originIdNum = Number.parseInt(originId, 10);
+  if (Number.isNaN(originIdNum)) {
+    context.res = {
+      status: 400,
+      body: {
+        success: false,
+        message: 'ID de origen inválido',
+        timestamp: new Date().toISOString(),
+      },
+    };
+    return null;
+  }
+  return originIdNum;
+}
+
+async function findAndValidateOrigin(context: Context, originIdNum: number): Promise<any | null> {
+  const origin = await db.findById('nubestock.tb_mae_origin', originIdNum);
+  
+  if (!origin) {
+    context.res = {
+      status: 404,
+      body: {
+        success: false,
+        message: 'Origen no encontrado',
+        timestamp: new Date().toISOString(),
+      },
+    };
+    return null;
+  }
+  return origin;
+}
+
+function validateSchema(context: Context, schema: Joi.ObjectSchema, data: any): any | null {
+  const { error, value } = schema.validate(data);
+  if (error) {
+    context.res = {
+      status: 400,
+      body: {
+        success: false,
+        message: 'Datos de entrada inválidos',
+        errors: error.details.map(detail => ({
+          field: detail.path[0],
+          message: detail.message,
+        })),
+        timestamp: new Date().toISOString(),
+      },
+    };
+    return null;
+  }
+  return value;
+}
+
+function createErrorResponse(status: number, message: string): { status: number; body: any } {
+  return {
+    status,
+    body: {
+      success: false,
+      message,
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
+
+function handleError(context: Context, error: any, operation: string): void {
+  logger.error(`Error al ${operation}:`, error);
+  context.res = {
+    status: 500,
+    body: {
+      success: false,
+      message: `Error al ${operation}`,
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
+
 /**
  * Obtener todos los orígenes con información de ubicación
  */
@@ -107,15 +200,7 @@ export async function listOrigins(context: Context, req: HttpRequest): Promise<v
       };
     }
   } catch (error) {
-    logger.error('Error al obtener orígenes:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al obtener orígenes',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'obtener orígenes');
   }
 }
 
@@ -127,34 +212,13 @@ export async function createOrigin(context: Context, req: HttpRequest): Promise<
       id_facility: Joi.string().max(100).allow(null).optional(),
     });
 
-    const { error, value } = originSchema.validate(req.body);
-    if (error) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'Datos de entrada inválidos',
-          errors: error.details.map(detail => ({
-            field: detail.path[0],
-            message: detail.message,
-          })),
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const value = validateSchema(context, originSchema, req.body);
+    if (value === null) return;
 
     // Verificar que la ciudad existe
     const city = await db.findById('nubestock.tb_mae_city', value.id_city);
     if (!city || !(city as any).is_active) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'La ciudad especificada no existe o no está activa',
-          timestamp: new Date().toISOString(),
-        },
-      };
+      context.res = createErrorResponse(400, 'La ciudad especificada no existe o no está activa');
       return;
     }
 
@@ -168,14 +232,7 @@ export async function createOrigin(context: Context, req: HttpRequest): Promise<
       .first();
 
     if (existingOrigin) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'Ya existe un origen con ese nombre en la ciudad especificada',
-          timestamp: new Date().toISOString(),
-        },
-      };
+      context.res = createErrorResponse(400, 'Ya existe un origen con ese nombre en la ciudad especificada');
       return;
     }
 
@@ -200,15 +257,7 @@ export async function createOrigin(context: Context, req: HttpRequest): Promise<
       },
     };
   } catch (error) {
-    logger.error('Error al crear origen:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al crear origen',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'crear origen');
   }
 }
 
@@ -344,15 +393,7 @@ export async function updateOrigin(context: Context, req: HttpRequest): Promise<
       },
     };
   } catch (error) {
-    logger.error('Error al actualizar origen:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al actualizar origen',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'actualizar origen');
   }
 }
 
@@ -434,14 +475,6 @@ export async function deleteOrigin(context: Context, req: HttpRequest): Promise<
       },
     };
   } catch (error) {
-    logger.error('Error al eliminar origen:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al eliminar origen',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'eliminar origen');
   }
 }

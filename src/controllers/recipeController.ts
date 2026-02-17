@@ -5,6 +5,82 @@ import Joi from 'joi';
 
 const db = Database.getInstance();
 
+// Helper functions to reduce code duplication
+
+function validateRecipeIdRequired(context: Context, recipeId: string | undefined): string | null {
+  if (!recipeId) {
+    context.res = {
+      status: 400,
+      body: {
+        success: false,
+        message: 'ID de receta requerido',
+        timestamp: new Date().toISOString(),
+      },
+    };
+    return null;
+  }
+  return recipeId;
+}
+
+function validateRecipeId(context: Context, recipeId: string): number | null {
+  const recipeIdNum = Number.parseInt(recipeId, 10);
+  if (Number.isNaN(recipeIdNum)) {
+    context.res = {
+      status: 400,
+      body: {
+        success: false,
+        message: 'ID de receta inválido',
+        timestamp: new Date().toISOString(),
+      },
+    };
+    return null;
+  }
+  return recipeIdNum;
+}
+
+function validateSchema(context: Context, schema: Joi.ObjectSchema, data: any): any | null {
+  const { error, value } = schema.validate(data);
+  if (error) {
+    context.res = {
+      status: 400,
+      body: {
+        success: false,
+        message: 'Datos de entrada inválidos',
+        errors: error.details.map(detail => ({
+          field: detail.path.join('.'),
+          message: detail.message,
+        })),
+        timestamp: new Date().toISOString(),
+      },
+    };
+    return null;
+  }
+  return value;
+}
+
+function createErrorResponse(status: number, message: string): { status: number; body: any } {
+  return {
+    status,
+    body: {
+      success: false,
+      message,
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
+
+function handleError(context: Context, error: any, operation: string): void {
+  logger.error(`Error al ${operation}:`, error);
+  context.res = {
+    status: 500,
+    body: {
+      success: false,
+      message: `Error al ${operation}`,
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
+
 export async function listRecipes(context: Context, req: HttpRequest): Promise<void> {
   try {
     const productId = (req.query.productId as string) || (req.query.id_product as string);
@@ -90,15 +166,7 @@ export async function listRecipes(context: Context, req: HttpRequest): Promise<v
       },
     };
   } catch (error) {
-    logger.error('Error al obtener recetas:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al obtener recetas',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'obtener recetas');
   }
 }
 
@@ -114,23 +182,8 @@ export async function createRecipe(context: Context, req: HttpRequest): Promise<
       ).min(1).required(),
     });
 
-    const { error, value } = recipeSchema.validate(req.body);
-    
-    if (error) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'Datos de entrada inválidos',
-          errors: error.details.map(detail => ({
-            field: detail.path.join('.'),
-            message: detail.message,
-          })),
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const value = validateSchema(context, recipeSchema, req.body);
+    if (value === null) return;
 
     const { id_product, materials } = value;
 
@@ -244,68 +297,24 @@ export async function createRecipe(context: Context, req: HttpRequest): Promise<
       },
     };
   } catch (error) {
-    logger.error('Error al crear receta:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al crear receta',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'crear receta');
   }
 }
 
 export async function updateRecipe(context: Context, req: HttpRequest): Promise<void> {
   try {
-    const recipeId = req.query.id as string;
-    
-    if (!recipeId) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'ID de receta requerido',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const recipeId = validateRecipeIdRequired(context, req.query.id as string);
+    if (recipeId === null) return;
 
-    const recipeIdNum = Number.parseInt(recipeId, 10);
-    if (Number.isNaN(recipeIdNum)) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'ID de receta inválido',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const recipeIdNum = validateRecipeId(context, recipeId);
+    if (recipeIdNum === null) return;
 
     const recipeSchema = Joi.object({
       is_active: Joi.boolean().optional(),
     });
 
-    const { error, value } = recipeSchema.validate(req.body);
-    
-    if (error) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'Datos de entrada inválidos',
-          errors: error.details.map(detail => ({
-            field: detail.path.join('.'),
-            message: detail.message,
-          })),
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const value = validateSchema(context, recipeSchema, req.body);
+    if (value === null) return;
 
     // Verificar si la receta existe
     const existingRecipe = await db.getConnection()
@@ -315,14 +324,7 @@ export async function updateRecipe(context: Context, req: HttpRequest): Promise<
       .first();
 
     if (!existingRecipe) {
-      context.res = {
-        status: 404,
-        body: {
-          success: false,
-          message: 'Receta no encontrada',
-          timestamp: new Date().toISOString(),
-        },
-      };
+      context.res = createErrorResponse(404, 'Receta no encontrada');
       return;
     }
 
@@ -367,23 +369,8 @@ export async function updateProductRecipe(context: Context, req: HttpRequest): P
       ).min(0).required(), // Permitir array vacío para quitar todos los materiales
     });
 
-    const { error, value } = recipeSchema.validate(req.body);
-    
-    if (error) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'Datos de entrada inválidos',
-          errors: error.details.map(detail => ({
-            field: detail.path.join('.'),
-            message: detail.message,
-          })),
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const value = validateSchema(context, recipeSchema, req.body);
+    if (value === null) return;
 
     const { id_product, materials } = value;
 
@@ -591,46 +578,17 @@ export async function updateProductRecipe(context: Context, req: HttpRequest): P
       },
     };
   } catch (error) {
-    logger.error('Error al actualizar receta del producto:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al actualizar receta del producto',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'actualizar receta del producto');
   }
 }
 
 export async function deleteRecipe(context: Context, req: HttpRequest): Promise<void> {
   try {
-    const recipeId = req.query.id as string;
-    
-    if (!recipeId) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'ID de receta requerido',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const recipeId = validateRecipeIdRequired(context, req.query.id as string);
+    if (recipeId === null) return;
 
-    const recipeIdNum = Number.parseInt(recipeId, 10);
-    if (Number.isNaN(recipeIdNum)) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'ID de receta inválido',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const recipeIdNum = validateRecipeId(context, recipeId);
+    if (recipeIdNum === null) return;
 
     // Verificar si la receta existe
     const existingRecipe = await db.getConnection()
@@ -641,14 +599,7 @@ export async function deleteRecipe(context: Context, req: HttpRequest): Promise<
       .first();
 
     if (!existingRecipe) {
-      context.res = {
-        status: 404,
-        body: {
-          success: false,
-          message: 'Receta no encontrada',
-          timestamp: new Date().toISOString(),
-        },
-      };
+      context.res = createErrorResponse(404, 'Receta no encontrada');
       return;
     }
 

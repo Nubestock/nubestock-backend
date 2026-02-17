@@ -5,6 +5,104 @@ import Joi from 'joi';
 
 const db = Database.getInstance();
 
+// Helper functions to reduce code duplication
+
+function validateMaterialIdRequired(context: Context, materialId: string | undefined): string | null {
+  if (!materialId) {
+    context.res = {
+      status: 400,
+      body: {
+        success: false,
+        message: 'ID de material requerido',
+        timestamp: new Date().toISOString(),
+      },
+    };
+    return null;
+  }
+  return materialId;
+}
+
+function validateMaterialId(context: Context, materialId: string): number | null {
+  const materialIdNum = Number.parseInt(materialId, 10);
+  if (Number.isNaN(materialIdNum)) {
+    context.res = {
+      status: 400,
+      body: {
+        success: false,
+        message: 'ID de material inválido',
+        timestamp: new Date().toISOString(),
+      },
+    };
+    return null;
+  }
+  return materialIdNum;
+}
+
+async function findAndValidateMaterial(context: Context, materialIdNum: number): Promise<any | null> {
+  const existingMaterial = await db.getConnection()
+    .select('id', 'sku')
+    .from('nubestock.tb_ope_product')
+    .where('id', materialIdNum)
+    .where('type', 'MP')
+    .first();
+
+  if (!existingMaterial) {
+    context.res = {
+      status: 404,
+      body: {
+        success: false,
+        message: 'Material no encontrado',
+        timestamp: new Date().toISOString(),
+      },
+    };
+    return null;
+  }
+  return existingMaterial;
+}
+
+function validateSchema(context: Context, schema: Joi.ObjectSchema, data: any): any | null {
+  const { error, value } = schema.validate(data);
+  if (error) {
+    context.res = {
+      status: 400,
+      body: {
+        success: false,
+        message: 'Datos de entrada inválidos',
+        errors: error.details.map(detail => ({
+          field: detail.path[0],
+          message: detail.message,
+        })),
+        timestamp: new Date().toISOString(),
+      },
+    };
+    return null;
+  }
+  return value;
+}
+
+function createErrorResponse(status: number, message: string): { status: number; body: any } {
+  return {
+    status,
+    body: {
+      success: false,
+      message,
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
+
+function handleError(context: Context, error: any, operation: string): void {
+  logger.error(`Error al ${operation}:`, error);
+  context.res = {
+    status: 500,
+    body: {
+      success: false,
+      message: `Error al ${operation}`,
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
+
 export async function listMaterials(context: Context, req: HttpRequest): Promise<void> {
   try {
     const id_origin = req.query.id_origin as string;
@@ -36,15 +134,7 @@ export async function listMaterials(context: Context, req: HttpRequest): Promise
       },
     };
   } catch (error) {
-    logger.error('Error al obtener materiales:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al obtener materiales',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'obtener materiales');
   }
 }
 
@@ -60,22 +150,8 @@ export async function createMaterial(context: Context, req: HttpRequest): Promis
       quantity: Joi.number().min(0).default(0),
     });
 
-    const { error, value } = materialSchema.validate(req.body);
-    if (error) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'Datos de entrada inválidos',
-          errors: error.details.map(detail => ({
-            field: detail.path[0],
-            message: detail.message,
-          })),
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const value = validateSchema(context, materialSchema, req.body);
+    if (value === null) return;
 
     // Verificar si el material ya existe (por SKU)
     const existingMaterial = await db.getConnection()
@@ -86,14 +162,7 @@ export async function createMaterial(context: Context, req: HttpRequest): Promis
       .first();
 
     if (existingMaterial) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'El material (SKU) ya existe',
-          timestamp: new Date().toISOString(),
-        },
-      };
+      context.res = createErrorResponse(400, 'El material (SKU) ya existe');
       return;
     }
 
@@ -119,46 +188,17 @@ export async function createMaterial(context: Context, req: HttpRequest): Promis
       },
     };
   } catch (error) {
-    logger.error('Error al crear material:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al crear material',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'crear material');
   }
 }
 
 export async function updateMaterial(context: Context, req: HttpRequest): Promise<void> {
   try {
-    const materialId = req.query.id as string;
-    
-    if (!materialId) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'ID de material requerido',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const materialId = validateMaterialIdRequired(context, req.query.id as string);
+    if (materialId === null) return;
 
-    const materialIdNum = Number.parseInt(materialId, 10);
-    if (Number.isNaN(materialIdNum)) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'ID de material inválido',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const materialIdNum = validateMaterialId(context, materialId);
+    if (materialIdNum === null) return;
 
     const materialSchema = Joi.object({
       name: Joi.string().min(2).max(200).optional(),
@@ -171,43 +211,11 @@ export async function updateMaterial(context: Context, req: HttpRequest): Promis
       is_active: Joi.boolean().optional(),
     });
 
-    const { error, value } = materialSchema.validate(req.body);
-    
-    if (error) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'Datos de entrada inválidos',
-          errors: error.details.map(detail => ({
-            field: detail.path[0],
-            message: detail.message,
-          })),
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const value = validateSchema(context, materialSchema, req.body);
+    if (value === null) return;
 
-    // Verificar si el material existe (debe ser type='MP')
-    const existingMaterial = await db.getConnection()
-      .select('id', 'sku')
-      .from('nubestock.tb_ope_product')
-      .where('id', materialIdNum)
-      .where('type', 'MP')
-      .first();
-
-    if (!existingMaterial) {
-      context.res = {
-        status: 404,
-        body: {
-          success: false,
-          message: 'Material no encontrado',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const existingMaterial = await findAndValidateMaterial(context, materialIdNum);
+    if (!existingMaterial) return;
 
     // Si se actualiza el SKU, verificar que no exista otro material con el mismo SKU
     if (value.sku && value.sku !== existingMaterial.sku) {
@@ -220,14 +228,7 @@ export async function updateMaterial(context: Context, req: HttpRequest): Promis
         .first();
 
       if (duplicateMaterial) {
-        context.res = {
-          status: 400,
-          body: {
-            success: false,
-            message: 'El SKU ya está registrado',
-            timestamp: new Date().toISOString(),
-          },
-        };
+        context.res = createErrorResponse(400, 'El SKU ya está registrado');
         return;
       }
     }
@@ -270,52 +271,14 @@ export async function updateMaterial(context: Context, req: HttpRequest): Promis
 
 export async function deleteMaterial(context: Context, req: HttpRequest): Promise<void> {
   try {
-    const materialId = req.query.id as string;
-    
-    if (!materialId) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'ID de material requerido',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const materialId = validateMaterialIdRequired(context, req.query.id as string);
+    if (materialId === null) return;
 
-    const materialIdNum = Number.parseInt(materialId, 10);
-    if (Number.isNaN(materialIdNum)) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'ID de material inválido',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const materialIdNum = validateMaterialId(context, materialId);
+    if (materialIdNum === null) return;
 
-    // Verificar si el material existe (debe ser type='MP')
-    const existingMaterial = await db.getConnection()
-      .select('id')
-      .from('nubestock.tb_ope_product')
-      .where('id', materialIdNum)
-      .where('type', 'MP')
-      .first();
-
-    if (!existingMaterial) {
-      context.res = {
-        status: 404,
-        body: {
-          success: false,
-          message: 'Material no encontrado',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const existingMaterial = await findAndValidateMaterial(context, materialIdNum);
+    if (!existingMaterial) return;
 
     // Soft delete: desactivar en lugar de eliminar
     await db.update('nubestock.tb_ope_product', materialIdNum, {

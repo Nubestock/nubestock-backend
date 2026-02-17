@@ -4,6 +4,47 @@ import { logger } from '../config/logger';
 
 const db = Database.getInstance();
 
+// Helper functions to reduce code duplication
+
+function validateRoleId(context: Context, roleId: string): number | null {
+  const roleIdNum = Number.parseInt(roleId, 10);
+  if (Number.isNaN(roleIdNum)) {
+    context.res = {
+      status: 400,
+      body: {
+        success: false,
+        message: 'ID de rol inválido',
+        timestamp: new Date().toISOString(),
+      },
+    };
+    return null;
+  }
+  return roleIdNum;
+}
+
+function createErrorResponse(status: number, message: string): { status: number; body: any } {
+  return {
+    status,
+    body: {
+      success: false,
+      message,
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
+
+function handleError(context: Context, error: any, operation: string): void {
+  logger.error(`Error al ${operation}:`, error);
+  context.res = {
+    status: 500,
+    body: {
+      success: false,
+      message: `Error al ${operation}`,
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
+
 export async function listRoles(context: Context, req: HttpRequest): Promise<void> {
   try {
     const roles = await db.getConnection()
@@ -21,15 +62,7 @@ export async function listRoles(context: Context, req: HttpRequest): Promise<voi
       },
     };
   } catch (error) {
-    logger.error('Error al listar roles:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al listar roles',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'listar roles');
   }
 }
 
@@ -83,15 +116,7 @@ export async function getAllRolesWithPermissions(context: Context, req: HttpRequ
       },
     };
   } catch (error) {
-    logger.error('Error al obtener roles con permisos:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al obtener roles con permisos',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'obtener roles con permisos');
   }
 }
 
@@ -145,15 +170,7 @@ export async function getRole(context: Context, req: HttpRequest, roleId: string
       },
     };
   } catch (error) {
-    logger.error('Error al obtener rol:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al obtener rol',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'obtener rol');
   }
 }
 
@@ -249,15 +266,7 @@ export async function createRole(context: Context, req: HttpRequest): Promise<vo
       },
     };
   } catch (error) {
-    logger.error('Error al crear rol:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al crear rol',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'crear rol');
   }
 }
 
@@ -356,15 +365,7 @@ export async function updateRole(context: Context, req: HttpRequest, roleId: str
       },
     };
   } catch (error) {
-    logger.error('Error al actualizar rol:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al actualizar rol',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'actualizar rol');
   }
 }
 
@@ -407,14 +408,6 @@ export async function deleteRole(context: Context, req: HttpRequest, roleId: str
       },
     };
   } catch (error) {
-    logger.error('Error al eliminar rol:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al eliminar rol',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'eliminar rol');
   }
 }
