@@ -3,6 +3,7 @@ import { Database } from '../config/database';
 import { logger } from '../config/logger';
 import { Maintenance, MaintenanceHistory, MaintenanceDetails } from '../interfaces';
 import { requireAuth } from '../middleware/authMiddleware';
+import { assignIfDefined } from '../utils/controllerHelpers';
 import Joi from 'joi';
 
 const db = Database.getInstance();
@@ -270,30 +271,7 @@ export async function updateMaintenance(context: Context, req: HttpRequest, main
     const updateData: any = {
       modification_date: new Date(),
     };
-
-    if (value.id_machinery !== undefined) {
-      updateData.id_machinery = value.id_machinery;
-    }
-
-    if (value.name !== undefined) {
-      updateData.name = value.name;
-    }
-
-    if (value.type !== undefined) {
-      updateData.type = value.type;
-    }
-
-    if (value.is_active !== undefined) {
-      updateData.is_active = value.is_active;
-    }
-
-    if (value.next_maintainance_value !== undefined) {
-      updateData.next_maintainance_value = value.next_maintainance_value;
-    }
-
-    if (value.last_mantainance_date !== undefined) {
-      updateData.last_mantainance_date = value.last_mantainance_date;
-    }
+    assignIfDefined(updateData, value);
 
     const [updatedMaintenance] = await db.getConnection()
       .where('id', maintenanceIdNum)
@@ -716,18 +694,16 @@ export async function updateMaintenanceHistory(context: Context, req: HttpReques
     const updateData: any = {
       modification_date: new Date(),
     };
-
+    
+    // Convertir details a JSON string si está presente
     if (value.details !== undefined) {
       updateData.details = JSON.stringify(value.details);
     }
-
-    if (value.price !== undefined) {
-      updateData.price = value.price;
-    }
-
-    if (value.next_mantainance_date !== undefined) {
-      updateData.next_mantainance_date = value.next_mantainance_date;
-    }
+    
+    assignIfDefined(updateData, {
+      price: value.price,
+      next_mantainance_date: value.next_mantainance_date,
+    });
 
     const [updatedHistory] = await db.getConnection()
       .where('id', historyIdNum)
