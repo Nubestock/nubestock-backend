@@ -1,48 +1,13 @@
 import { Context, HttpRequest } from '../types/azure-functions';
 import { Database } from '../config/database';
-import { logger } from '../config/logger';
+import { createErrorResponse, handleError, validateId } from '../utils/controllerHelpers';
 
 const db = Database.getInstance();
 
-// Helper functions to reduce code duplication
+// Helper functions specific to roles
 
 function validateRoleId(context: Context, roleId: string): number | null {
-  const roleIdNum = Number.parseInt(roleId, 10);
-  if (Number.isNaN(roleIdNum)) {
-    context.res = {
-      status: 400,
-      body: {
-        success: false,
-        message: 'ID de rol inválido',
-        timestamp: new Date().toISOString(),
-      },
-    };
-    return null;
-  }
-  return roleIdNum;
-}
-
-function createErrorResponse(status: number, message: string): { status: number; body: any } {
-  return {
-    status,
-    body: {
-      success: false,
-      message,
-      timestamp: new Date().toISOString(),
-    },
-  };
-}
-
-function handleError(context: Context, error: any, operation: string): void {
-  logger.error(`Error al ${operation}:`, error);
-  context.res = {
-    status: 500,
-    body: {
-      success: false,
-      message: `Error al ${operation}`,
-      timestamp: new Date().toISOString(),
-    },
-  };
+  return validateId(context, roleId, 'rol');
 }
 
 export async function listRoles(context: Context, req: HttpRequest): Promise<void> {

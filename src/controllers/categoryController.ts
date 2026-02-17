@@ -1,37 +1,17 @@
 import { Context, HttpRequest } from '../types/azure-functions';
 import { Database } from '../config/database';
-import { logger } from '../config/logger';
 import Joi from 'joi';
+import { validateSchema, createErrorResponse, handleError, validateIdRequired, validateId } from '../utils/controllerHelpers';
 
 const db = Database.getInstance();
 
-// Helper functions to reduce code duplication
-
-/**
- * Valida y parsea un categoryId string a número
- * Retorna null si es inválido
- */
-function parseCategoryId(categoryId: string): number | null {
-  const categoryIdNum = Number.parseInt(categoryId, 10);
-  return Number.isNaN(categoryIdNum) ? null : categoryIdNum;
-}
+// Helper functions specific to categories
 
 /**
  * Valida que categoryId exista en query y retorna respuesta 400 si falta
  */
 function validateCategoryIdRequired(context: Context, categoryId: string | undefined): string | null {
-  if (!categoryId) {
-    context.res = {
-      status: 400,
-      body: {
-        success: false,
-        message: 'ID de categoría requerido',
-        timestamp: new Date().toISOString(),
-      },
-    };
-    return null;
-  }
-  return categoryId;
+  return validateIdRequired(context, categoryId, 'categoría');
 }
 
 /**
@@ -39,19 +19,7 @@ function validateCategoryIdRequired(context: Context, categoryId: string | undef
  * Retorna el número parseado si es válido, null si se estableció respuesta de error
  */
 function validateCategoryId(context: Context, categoryId: string): number | null {
-  const categoryIdNum = parseCategoryId(categoryId);
-  if (categoryIdNum === null) {
-    context.res = {
-      status: 400,
-      body: {
-        success: false,
-        message: 'ID de categoría inválido',
-        timestamp: new Date().toISOString(),
-      },
-    };
-    return null;
-  }
-  return categoryIdNum;
+  return validateId(context, categoryId, 'categoría');
 }
 
 /**
@@ -75,58 +43,6 @@ async function findAndValidateCategory(context: Context, categoryIdNum: number, 
   return category;
 }
 
-/**
- * Valida un esquema Joi y retorna respuesta 400 si hay errores
- * Retorna el valor validado si es válido, null si se estableció respuesta de error
- */
-function validateSchema(context: Context, schema: Joi.ObjectSchema, data: any): any | null {
-  const { error, value } = schema.validate(data);
-  if (error) {
-    context.res = {
-      status: 400,
-      body: {
-        success: false,
-        message: 'Datos de entrada inválidos',
-        errors: error.details.map(detail => ({
-          field: detail.path[0],
-          message: detail.message,
-        })),
-        timestamp: new Date().toISOString(),
-      },
-    };
-    return null;
-  }
-  return value;
-}
-
-/**
- * Crea una respuesta de error estándar
- */
-function createErrorResponse(status: number, message: string): { status: number; body: any } {
-  return {
-    status,
-    body: {
-      success: false,
-      message,
-      timestamp: new Date().toISOString(),
-    },
-  };
-}
-
-/**
- * Maneja errores de forma consistente
- */
-function handleError(context: Context, error: any, operation: string): void {
-  logger.error(`Error al ${operation}:`, error);
-  context.res = {
-    status: 500,
-    body: {
-      success: false,
-      message: `Error al ${operation}`,
-      timestamp: new Date().toISOString(),
-    },
-  };
-}
 
 export async function listCategories(context: Context, req: HttpRequest): Promise<void> {
   try {

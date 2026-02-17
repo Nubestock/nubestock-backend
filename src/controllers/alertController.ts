@@ -1,41 +1,20 @@
 import { Context, HttpRequest } from '../types/azure-functions';
 import { Database } from '../config/database';
-import { logger } from '../config/logger';
 import { requireAuth } from '../middleware/authMiddleware';
 import { createAlert } from '../utils/alertHelper';
 import Joi from 'joi';
+import { createErrorResponse, handleError, validateId } from '../utils/controllerHelpers';
 
 const db = Database.getInstance();
 
-// Helper functions to reduce code duplication
-
-/**
- * Valida y parsea un alertId string a número
- * Retorna null si es inválido
- */
-function parseAlertId(alertId: string): number | null {
-  const alertIdNum = Number.parseInt(alertId, 10);
-  return Number.isNaN(alertIdNum) ? null : alertIdNum;
-}
+// Helper functions specific to alerts
 
 /**
  * Valida alertId y retorna respuesta 400 si es inválido
  * Retorna el número parseado si es válido, null si se estableció respuesta de error
  */
 function validateAlertId(context: Context, alertId: string): number | null {
-  const alertIdNum = parseAlertId(alertId);
-  if (alertIdNum === null) {
-    context.res = {
-      status: 400,
-      body: {
-        success: false,
-        message: 'ID de alerta inválido',
-        timestamp: new Date().toISOString(),
-      },
-    };
-    return null;
-  }
-  return alertIdNum;
+  return validateId(context, alertId, 'alerta');
 }
 
 /**
@@ -79,34 +58,6 @@ function mapAlert(alert: any): any {
   };
 }
 
-/**
- * Crea una respuesta de error estándar
- */
-function createErrorResponse(status: number, message: string): { status: number; body: any } {
-  return {
-    status,
-    body: {
-      success: false,
-      message,
-      timestamp: new Date().toISOString(),
-    },
-  };
-}
-
-/**
- * Maneja errores de forma consistente
- */
-function handleError(context: Context, error: any, operation: string): void {
-  logger.error(`Error al ${operation}:`, error);
-  context.res = {
-    status: 500,
-    body: {
-      success: false,
-      message: error.message || `Error al ${operation}`,
-      timestamp: new Date().toISOString(),
-    },
-  };
-}
 
 export async function createAlertHandler(context: Context, req: HttpRequest): Promise<void> {
   try {

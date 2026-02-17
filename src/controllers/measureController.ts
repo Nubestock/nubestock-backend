@@ -1,41 +1,18 @@
 import { Context, HttpRequest } from '../types/azure-functions';
 import { Database } from '../config/database';
-import { logger } from '../config/logger';
 import Joi from 'joi';
+import { validateSchema, createErrorResponse, handleError, validateIdRequired, validateId } from '../utils/controllerHelpers';
 
 const db = Database.getInstance();
 
-// Helper functions to reduce code duplication
+// Helper functions specific to measures
 
 function validateMeasureIdRequired(context: Context, measureId: string | undefined): string | null {
-  if (!measureId) {
-    context.res = {
-      status: 400,
-      body: {
-        success: false,
-        message: 'ID de medida requerido',
-        timestamp: new Date().toISOString(),
-      },
-    };
-    return null;
-  }
-  return measureId;
+  return validateIdRequired(context, measureId, 'medida');
 }
 
 function validateMeasureId(context: Context, measureId: string): number | null {
-  const measureIdNum = Number.parseInt(measureId, 10);
-  if (Number.isNaN(measureIdNum)) {
-    context.res = {
-      status: 400,
-      body: {
-        success: false,
-        message: 'ID de medida inválido',
-        timestamp: new Date().toISOString(),
-      },
-    };
-    return null;
-  }
-  return measureIdNum;
+  return validateId(context, measureId, 'medida');
 }
 
 async function findAndValidateMeasure(context: Context, measureIdNum: number, checkActive: boolean = false): Promise<any | null> {
@@ -55,48 +32,6 @@ async function findAndValidateMeasure(context: Context, measureIdNum: number, ch
   return measure;
 }
 
-function validateSchema(context: Context, schema: Joi.ObjectSchema, data: any): any | null {
-  const { error, value } = schema.validate(data);
-  if (error) {
-    context.res = {
-      status: 400,
-      body: {
-        success: false,
-        message: 'Datos de entrada inválidos',
-        errors: error.details.map(detail => ({
-          field: detail.path[0],
-          message: detail.message,
-        })),
-        timestamp: new Date().toISOString(),
-      },
-    };
-    return null;
-  }
-  return value;
-}
-
-function createErrorResponse(status: number, message: string): { status: number; body: any } {
-  return {
-    status,
-    body: {
-      success: false,
-      message,
-      timestamp: new Date().toISOString(),
-    },
-  };
-}
-
-function handleError(context: Context, error: any, operation: string): void {
-  logger.error(`Error al ${operation}:`, error);
-  context.res = {
-    status: 500,
-    body: {
-      success: false,
-      message: `Error al ${operation}`,
-      timestamp: new Date().toISOString(),
-    },
-  };
-}
 
 export async function listMeasures(context: Context, req: HttpRequest): Promise<void> {
   try {
@@ -266,15 +201,7 @@ export async function updateMeasure(context: Context, req: HttpRequest): Promise
       },
     };
   } catch (error) {
-    logger.error('Error al actualizar medida:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al actualizar medida',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'actualizar medida');
   }
 }
 

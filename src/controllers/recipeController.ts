@@ -2,83 +2,18 @@ import { Context, HttpRequest } from '../types/azure-functions';
 import { Database } from '../config/database';
 import { logger } from '../config/logger';
 import Joi from 'joi';
+import { validateSchema, createErrorResponse, handleError, validateIdRequired, validateId } from '../utils/controllerHelpers';
 
 const db = Database.getInstance();
 
-// Helper functions to reduce code duplication
+// Helper functions specific to recipes
 
 function validateRecipeIdRequired(context: Context, recipeId: string | undefined): string | null {
-  if (!recipeId) {
-    context.res = {
-      status: 400,
-      body: {
-        success: false,
-        message: 'ID de receta requerido',
-        timestamp: new Date().toISOString(),
-      },
-    };
-    return null;
-  }
-  return recipeId;
+  return validateIdRequired(context, recipeId, 'receta');
 }
 
 function validateRecipeId(context: Context, recipeId: string): number | null {
-  const recipeIdNum = Number.parseInt(recipeId, 10);
-  if (Number.isNaN(recipeIdNum)) {
-    context.res = {
-      status: 400,
-      body: {
-        success: false,
-        message: 'ID de receta inválido',
-        timestamp: new Date().toISOString(),
-      },
-    };
-    return null;
-  }
-  return recipeIdNum;
-}
-
-function validateSchema(context: Context, schema: Joi.ObjectSchema, data: any): any | null {
-  const { error, value } = schema.validate(data);
-  if (error) {
-    context.res = {
-      status: 400,
-      body: {
-        success: false,
-        message: 'Datos de entrada inválidos',
-        errors: error.details.map(detail => ({
-          field: detail.path.join('.'),
-          message: detail.message,
-        })),
-        timestamp: new Date().toISOString(),
-      },
-    };
-    return null;
-  }
-  return value;
-}
-
-function createErrorResponse(status: number, message: string): { status: number; body: any } {
-  return {
-    status,
-    body: {
-      success: false,
-      message,
-      timestamp: new Date().toISOString(),
-    },
-  };
-}
-
-function handleError(context: Context, error: any, operation: string): void {
-  logger.error(`Error al ${operation}:`, error);
-  context.res = {
-    status: 500,
-    body: {
-      success: false,
-      message: `Error al ${operation}`,
-      timestamp: new Date().toISOString(),
-    },
-  };
+  return validateId(context, recipeId, 'receta');
 }
 
 export async function listRecipes(context: Context, req: HttpRequest): Promise<void> {
@@ -633,14 +568,6 @@ export async function deleteRecipe(context: Context, req: HttpRequest): Promise<
       },
     };
   } catch (error) {
-    logger.error('Error al eliminar receta:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al eliminar receta',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'eliminar receta');
   }
 }

@@ -1,41 +1,18 @@
 import { Context, HttpRequest } from '../types/azure-functions';
 import { Database } from '../config/database';
-import { logger } from '../config/logger';
 import Joi from 'joi';
+import { validateSchema, createErrorResponse, handleError, validateIdRequired, validateId } from '../utils/controllerHelpers';
 
 const db = Database.getInstance();
 
-// Helper functions to reduce code duplication
+// Helper functions specific to origins
 
 function validateOriginIdRequired(context: Context, originId: string | undefined): string | null {
-  if (!originId) {
-    context.res = {
-      status: 400,
-      body: {
-        success: false,
-        message: 'ID de origen requerido',
-        timestamp: new Date().toISOString(),
-      },
-    };
-    return null;
-  }
-  return originId;
+  return validateIdRequired(context, originId, 'origen');
 }
 
 function validateOriginId(context: Context, originId: string): number | null {
-  const originIdNum = Number.parseInt(originId, 10);
-  if (Number.isNaN(originIdNum)) {
-    context.res = {
-      status: 400,
-      body: {
-        success: false,
-        message: 'ID de origen inválido',
-        timestamp: new Date().toISOString(),
-      },
-    };
-    return null;
-  }
-  return originIdNum;
+  return validateId(context, originId, 'origen');
 }
 
 async function findAndValidateOrigin(context: Context, originIdNum: number): Promise<any | null> {
@@ -55,48 +32,6 @@ async function findAndValidateOrigin(context: Context, originIdNum: number): Pro
   return origin;
 }
 
-function validateSchema(context: Context, schema: Joi.ObjectSchema, data: any): any | null {
-  const { error, value } = schema.validate(data);
-  if (error) {
-    context.res = {
-      status: 400,
-      body: {
-        success: false,
-        message: 'Datos de entrada inválidos',
-        errors: error.details.map(detail => ({
-          field: detail.path[0],
-          message: detail.message,
-        })),
-        timestamp: new Date().toISOString(),
-      },
-    };
-    return null;
-  }
-  return value;
-}
-
-function createErrorResponse(status: number, message: string): { status: number; body: any } {
-  return {
-    status,
-    body: {
-      success: false,
-      message,
-      timestamp: new Date().toISOString(),
-    },
-  };
-}
-
-function handleError(context: Context, error: any, operation: string): void {
-  logger.error(`Error al ${operation}:`, error);
-  context.res = {
-    status: 500,
-    body: {
-      success: false,
-      message: `Error al ${operation}`,
-      timestamp: new Date().toISOString(),
-    },
-  };
-}
 
 /**
  * Obtener todos los orígenes con información de ubicación
