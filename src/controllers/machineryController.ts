@@ -6,6 +6,115 @@ import Joi from 'joi';
 
 const db = Database.getInstance();
 
+// Helper functions to reduce code duplication
+
+/**
+ * Valida y parsea un machineryId string a número
+ * Retorna null si es inválido
+ */
+function parseMachineryId(machineryId: string): number | null {
+  const machineryIdNum = Number.parseInt(machineryId, 10);
+  return Number.isNaN(machineryIdNum) ? null : machineryIdNum;
+}
+
+/**
+ * Valida machineryId y retorna respuesta 400 si es inválido
+ * Retorna el número parseado si es válido, null si se estableció respuesta de error
+ */
+function validateMachineryId(context: Context, machineryId: string): number | null {
+  const machineryIdNum = parseMachineryId(machineryId);
+  if (machineryIdNum === null) {
+    context.res = {
+      status: 400,
+      body: {
+        success: false,
+        message: 'ID de maquinaria inválido',
+        timestamp: new Date().toISOString(),
+      },
+    };
+    return null;
+  }
+  return machineryIdNum;
+}
+
+/**
+ * Busca una maquinaria por ID y valida que exista
+ * Retorna la maquinaria si existe, null si no existe (y establece respuesta 404)
+ */
+async function findAndValidateMachinery(context: Context, machineryIdNum: number): Promise<any | null> {
+  const machinery = await db.getConnection()
+    .select('*')
+    .from('nubestock.tb_mae_machinery')
+    .where('id', machineryIdNum)
+    .first();
+
+  if (!machinery) {
+    context.res = {
+      status: 404,
+      body: {
+        success: false,
+        message: 'Maquinaria no encontrada',
+        timestamp: new Date().toISOString(),
+      },
+    };
+    return null;
+  }
+  return machinery;
+}
+
+/**
+ * Valida un esquema Joi y retorna respuesta 400 si hay errores
+ * Retorna el valor validado si es válido, null si se estableció respuesta de error
+ */
+function validateSchema(context: Context, schema: Joi.ObjectSchema, data: any): any | null {
+  const { error, value } = schema.validate(data);
+  if (error) {
+    context.res = {
+      status: 400,
+      body: {
+        success: false,
+        message: 'Datos de entrada inválidos',
+        errors: error.details.map(detail => ({
+          field: detail.path.join('.'),
+          message: detail.message,
+        })),
+        timestamp: new Date().toISOString(),
+      },
+    };
+    return null;
+  }
+  return value;
+}
+
+/**
+ * Crea una respuesta de error estándar
+ */
+function createErrorResponse(status: number, message: string): { status: number; body: any } {
+  return {
+    status,
+    body: {
+      success: false,
+      message,
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
+
+/**
+ * Maneja errores de forma consistente
+ */
+function handleError(context: Context, error: any, operation: string): void {
+  logger.error(`Error al ${operation}:`, error);
+  context.res = {
+    status: 500,
+    body: {
+      success: false,
+      message: `Error al ${operation}`,
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
+
 export async function listMachinery(context: Context, req: HttpRequest): Promise<void> {
   try {
     const { search, is_active } = req.query;
@@ -37,50 +146,17 @@ export async function listMachinery(context: Context, req: HttpRequest): Promise
       },
     };
   } catch (error) {
-    logger.error('Error al listar maquinaria:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al listar maquinaria',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'listar maquinaria');
   }
 }
 
 export async function getMachinery(context: Context, req: HttpRequest, machineryId: string): Promise<void> {
   try {
-    const machineryIdNum = Number.parseInt(machineryId, 10);
-    if (Number.isNaN(machineryIdNum)) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'ID de maquinaria inválido',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const machineryIdNum = validateMachineryId(context, machineryId);
+    if (machineryIdNum === null) return;
 
-    const machinery = await db.getConnection()
-      .select('*')
-      .from('nubestock.tb_mae_machinery')
-      .where('id', machineryIdNum)
-      .first();
-
-    if (!machinery) {
-      context.res = {
-        status: 404,
-        body: {
-          success: false,
-          message: 'Maquinaria no encontrada',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const machinery = await findAndValidateMachinery(context, machineryIdNum);
+    if (!machinery) return;
 
     context.res = {
       status: 200,
@@ -92,15 +168,7 @@ export async function getMachinery(context: Context, req: HttpRequest, machinery
       },
     };
   } catch (error) {
-    logger.error('Error al obtener maquinaria:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al obtener maquinaria',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'obtener maquinaria');
   }
 }
 
@@ -112,23 +180,8 @@ export async function createMachinery(context: Context, req: HttpRequest): Promi
       is_active: Joi.boolean().default(true),
     });
 
-    const { error, value } = machinerySchema.validate(req.body);
-
-    if (error) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'Datos de entrada inválidos',
-          errors: error.details.map(detail => ({
-            field: detail.path.join('.'),
-            message: detail.message,
-          })),
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const value = validateSchema(context, machinerySchema, req.body);
+    if (value === null) return;
 
     const [newMachinery] = await db.getConnection()
       .insert({
@@ -150,32 +203,14 @@ export async function createMachinery(context: Context, req: HttpRequest): Promi
       },
     };
   } catch (error) {
-    logger.error('Error al crear maquinaria:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al crear maquinaria',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'crear maquinaria');
   }
 }
 
 export async function updateMachinery(context: Context, req: HttpRequest, machineryId: string): Promise<void> {
   try {
-    const machineryIdNum = Number.parseInt(machineryId, 10);
-    if (Number.isNaN(machineryIdNum)) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'ID de maquinaria inválido',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const machineryIdNum = validateMachineryId(context, machineryId);
+    if (machineryIdNum === null) return;
 
     const machinerySchema = Joi.object({
       name: Joi.string().min(1).max(100).optional(),
@@ -183,23 +218,8 @@ export async function updateMachinery(context: Context, req: HttpRequest, machin
       is_active: Joi.boolean().optional(),
     });
 
-    const { error, value } = machinerySchema.validate(req.body);
-
-    if (error) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'Datos de entrada inválidos',
-          errors: error.details.map(detail => ({
-            field: detail.path.join('.'),
-            message: detail.message,
-          })),
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const value = validateSchema(context, machinerySchema, req.body);
+    if (value === null) return;
 
     const updateData: any = {
       modification_date: new Date(),
@@ -224,14 +244,7 @@ export async function updateMachinery(context: Context, req: HttpRequest, machin
       .returning('*');
 
     if (!updatedMachinery) {
-      context.res = {
-        status: 404,
-        body: {
-          success: false,
-          message: 'Maquinaria no encontrada',
-          timestamp: new Date().toISOString(),
-        },
-      };
+      context.res = createErrorResponse(404, 'Maquinaria no encontrada');
       return;
     }
 
@@ -245,51 +258,17 @@ export async function updateMachinery(context: Context, req: HttpRequest, machin
       },
     };
   } catch (error) {
-    logger.error('Error al actualizar maquinaria:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al actualizar maquinaria',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'actualizar maquinaria');
   }
 }
 
 export async function deleteMachinery(context: Context, req: HttpRequest, machineryId: string): Promise<void> {
   try {
-    const machineryIdNum = Number.parseInt(machineryId, 10);
-    if (Number.isNaN(machineryIdNum)) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'ID de maquinaria inválido',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const machineryIdNum = validateMachineryId(context, machineryId);
+    if (machineryIdNum === null) return;
 
-    // Verificar si existe
-    const machinery = await db.getConnection()
-      .select('*')
-      .from('nubestock.tb_mae_machinery')
-      .where('id', machineryIdNum)
-      .first();
-
-    if (!machinery) {
-      context.res = {
-        status: 404,
-        body: {
-          success: false,
-          message: 'Maquinaria no encontrada',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const machinery = await findAndValidateMachinery(context, machineryIdNum);
+    if (!machinery) return;
 
     // Soft delete: marcar como inactivo
     await db.getConnection()
@@ -309,14 +288,6 @@ export async function deleteMachinery(context: Context, req: HttpRequest, machin
       },
     };
   } catch (error) {
-    logger.error('Error al eliminar maquinaria:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al eliminar maquinaria',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'eliminar maquinaria');
   }
 }

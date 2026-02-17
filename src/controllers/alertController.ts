@@ -7,6 +7,107 @@ import Joi from 'joi';
 
 const db = Database.getInstance();
 
+// Helper functions to reduce code duplication
+
+/**
+ * Valida y parsea un alertId string a número
+ * Retorna null si es inválido
+ */
+function parseAlertId(alertId: string): number | null {
+  const alertIdNum = Number.parseInt(alertId, 10);
+  return Number.isNaN(alertIdNum) ? null : alertIdNum;
+}
+
+/**
+ * Valida alertId y retorna respuesta 400 si es inválido
+ * Retorna el número parseado si es válido, null si se estableció respuesta de error
+ */
+function validateAlertId(context: Context, alertId: string): number | null {
+  const alertIdNum = parseAlertId(alertId);
+  if (alertIdNum === null) {
+    context.res = {
+      status: 400,
+      body: {
+        success: false,
+        message: 'ID de alerta inválido',
+        timestamp: new Date().toISOString(),
+      },
+    };
+    return null;
+  }
+  return alertIdNum;
+}
+
+/**
+ * Busca una alerta por ID y valida que exista
+ * Retorna la alerta si existe, null si no existe (y establece respuesta 404)
+ */
+async function findAndValidateAlert(context: Context, alertIdNum: number): Promise<any | null> {
+  const alert = await db.findById('nubestock.tb_mae_alert', alertIdNum);
+  if (!alert) {
+    context.res = {
+      status: 404,
+      body: {
+        success: false,
+        message: 'Alerta no encontrada',
+        timestamp: new Date().toISOString(),
+      },
+    };
+    return null;
+  }
+  return alert;
+}
+
+/**
+ * Mapea una alerta a formato estándar de respuesta
+ */
+function mapAlert(alert: any): any {
+  return {
+    id: alert.id,
+    alert_type: alert.alert_type,
+    alert_title: alert.alert_title,
+    alert_message: alert.alert_message,
+    entity_type: alert.entity_type,
+    id_transaction: alert.id_transaction,
+    priority: alert.priority,
+    is_active: alert.is_active,
+    creation_date: alert.creation_date,
+    modification_date: alert.modification_date,
+    resolved_at: alert.resolved_at,
+    resolved_by: alert.resolved_by,
+    due_date: alert.due_date,
+  };
+}
+
+/**
+ * Crea una respuesta de error estándar
+ */
+function createErrorResponse(status: number, message: string): { status: number; body: any } {
+  return {
+    status,
+    body: {
+      success: false,
+      message,
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
+
+/**
+ * Maneja errores de forma consistente
+ */
+function handleError(context: Context, error: any, operation: string): void {
+  logger.error(`Error al ${operation}:`, error);
+  context.res = {
+    status: 500,
+    body: {
+      success: false,
+      message: error.message || `Error al ${operation}`,
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
+
 export async function createAlertHandler(context: Context, req: HttpRequest): Promise<void> {
   try {
     const createSchema = Joi.object({
@@ -64,53 +165,21 @@ export async function createAlertHandler(context: Context, req: HttpRequest): Pr
     );
 
     if (!newAlert) {
-      context.res = {
-        status: 500,
-        body: {
-          success: false,
-          message: 'Error al crear la alerta',
-          timestamp: new Date().toISOString(),
-        },
-      };
+      context.res = createErrorResponse(500, 'Error al crear la alerta');
       return;
     }
-
-    // Mapear respuesta
-    const mappedAlert = {
-      id: newAlert.id,
-      alert_type: newAlert.alert_type,
-      alert_title: newAlert.alert_title,
-      alert_message: newAlert.alert_message,
-      entity_type: newAlert.entity_type,
-      id_transaction: newAlert.id_transaction,
-      priority: newAlert.priority,
-      is_active: newAlert.is_active,
-      resolved_by: newAlert.resolved_by,
-      creation_date: newAlert.creation_date,
-      modification_date: newAlert.modification_date,
-      resolved_at: newAlert.resolved_at,
-      due_date: newAlert.due_date,
-    };
 
     context.res = {
       status: 201,
       body: {
         success: true,
-        data: mappedAlert,
+        data: mapAlert(newAlert),
         message: 'Alerta creada exitosamente',
         timestamp: new Date().toISOString(),
       },
     };
   } catch (error: any) {
-    logger.error('Error al crear alerta:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: error.message || 'Error al crear alerta',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'crear alerta');
   }
 }
 
@@ -138,153 +207,54 @@ export async function listAlerts(context: Context, req: HttpRequest): Promise<vo
 
     const alerts = await query;
 
-    // Mapear a formato esperado (mantener compatibilidad con API existente)
-    const mappedAlerts = alerts.map((alert: any) => ({
-      id: alert.id,
-      alert_type: alert.alert_type,
-      alert_title: alert.alert_title,
-      alert_message: alert.alert_message,
-      entity_type: alert.entity_type,
-      id_transaction: alert.id_transaction,
-      priority: alert.priority,
-      is_active: alert.is_active,
-      creation_date: alert.creation_date,
-      modification_date: alert.modification_date,
-      resolved_at: alert.resolved_at,
-      resolved_by: alert.resolved_by,
-      due_date: alert.due_date,
-    }));
-
     context.res = {
       status: 200,
       body: {
         success: true,
-        data: mappedAlerts,
+        data: alerts.map(mapAlert),
         timestamp: new Date().toISOString(),
       },
     };
   } catch (error) {
-    logger.error('Error al listar alertas:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al listar alertas',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'listar alertas');
   }
 }
 
 export async function getAlert(context: Context, req: HttpRequest, alertId: string): Promise<void> {
   try {
-    const alertIdNum = Number.parseInt(alertId, 10);
-    if (Number.isNaN(alertIdNum)) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'ID de alerta inválido',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const alertIdNum = validateAlertId(context, alertId);
+    if (alertIdNum === null) return;
 
-    const alert = await db.findById('nubestock.tb_mae_alert', alertIdNum);
-
-    if (!alert) {
-      context.res = {
-        status: 404,
-        body: {
-          success: false,
-          message: 'Alerta no encontrada',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
-
-    const mappedAlert = {
-      id: (alert as any).id,
-      alert_type: (alert as any).alert_type,
-      alert_title: (alert as any).alert_title,
-      alert_message: (alert as any).alert_message,
-      entity_type: (alert as any).entity_type,
-      id_transaction: (alert as any).id_transaction,
-      priority: (alert as any).priority,
-      is_active: (alert as any).is_active,
-      creation_date: (alert as any).creation_date,
-      modification_date: (alert as any).modification_date,
-      resolved_at: (alert as any).resolved_at,
-      resolved_by: (alert as any).resolved_by,
-      due_date: (alert as any).due_date,
-    };
+    const alert = await findAndValidateAlert(context, alertIdNum);
+    if (!alert) return;
 
     context.res = {
       status: 200,
       body: {
         success: true,
-        data: mappedAlert,
+        data: mapAlert(alert),
         timestamp: new Date().toISOString(),
       },
     };
   } catch (error) {
-    logger.error('Error al obtener alerta:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al obtener alerta',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'obtener alerta');
   }
 }
 
 export async function acknowledgeAlert(context: Context, req: HttpRequest, alertId: string): Promise<void> {
   try {
-    const alertIdNum = Number.parseInt(alertId, 10);
-    if (Number.isNaN(alertIdNum)) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'ID de alerta inválido',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const alertIdNum = validateAlertId(context, alertId);
+    if (alertIdNum === null) return;
 
-    const alert = await db.findById('nubestock.tb_mae_alert', alertIdNum);
+    const alert = await findAndValidateAlert(context, alertIdNum);
+    if (!alert) return;
 
-    if (!alert) {
-      context.res = {
-        status: 404,
-        body: {
-          success: false,
-          message: 'Alerta no encontrada',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
-
-    // Note: New schema doesn't have status field, just is_active
     const updatedAlert = await db.update('nubestock.tb_mae_alert', alertIdNum, {
       modification_date: new Date(),
     });
 
     if (!updatedAlert) {
-      context.res = {
-        status: 500,
-        body: {
-          success: false,
-          message: 'Error al reconocer la alerta',
-          timestamp: new Date().toISOString(),
-        },
-      };
+      context.res = createErrorResponse(500, 'Error al reconocer la alerta');
       return;
     }
 
@@ -298,70 +268,27 @@ export async function acknowledgeAlert(context: Context, req: HttpRequest, alert
       },
     };
   } catch (error) {
-    logger.error('Error al reconocer alerta:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al reconocer la alerta',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'reconocer alerta');
   }
 }
 
 export async function resolveAlert(context: Context, req: HttpRequest, alertId: string): Promise<void> {
   try {
-    const alertIdNum = Number.parseInt(alertId, 10);
-    if (Number.isNaN(alertIdNum)) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'ID de alerta inválido',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const alertIdNum = validateAlertId(context, alertId);
+    if (alertIdNum === null) return;
 
-    const alert = await db.findById('nubestock.tb_mae_alert', alertIdNum);
-
-    if (!alert) {
-      context.res = {
-        status: 404,
-        body: {
-          success: false,
-          message: 'Alerta no encontrada',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const alert = await findAndValidateAlert(context, alertIdNum);
+    if (!alert) return;
 
     const authResult = requireAuth(req);
     if (!authResult.success || !authResult.user) {
-      context.res = {
-        status: 401,
-        body: {
-          success: false,
-          message: 'Usuario no autenticado',
-          timestamp: new Date().toISOString(),
-        },
-      };
+      context.res = createErrorResponse(401, 'Usuario no autenticado');
       return;
     }
 
     const resolvedBy = authResult.user.userId;
     if (!resolvedBy) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'No se pudo obtener el ID del usuario',
-          timestamp: new Date().toISOString(),
-        },
-      };
+      context.res = createErrorResponse(400, 'No se pudo obtener el ID del usuario');
       return;
     }
 
@@ -375,14 +302,7 @@ export async function resolveAlert(context: Context, req: HttpRequest, alertId: 
     });
 
     if (!updatedAlert) {
-      context.res = {
-        status: 500,
-        body: {
-          success: false,
-          message: 'Error al resolver la alerta',
-          timestamp: new Date().toISOString(),
-        },
-      };
+      context.res = createErrorResponse(500, 'Error al resolver la alerta');
       return;
     }
 
@@ -396,62 +316,25 @@ export async function resolveAlert(context: Context, req: HttpRequest, alertId: 
       },
     };
   } catch (error) {
-    logger.error('Error al resolver alerta:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al resolver la alerta',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'resolver alerta');
   }
 }
 
 export async function dismissAlert(context: Context, req: HttpRequest, alertId: string): Promise<void> {
   try {
-    const alertIdNum = Number.parseInt(alertId, 10);
-    if (Number.isNaN(alertIdNum)) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'ID de alerta inválido',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const alertIdNum = validateAlertId(context, alertId);
+    if (alertIdNum === null) return;
 
-    const alert = await db.findById('nubestock.tb_mae_alert', alertIdNum);
+    const alert = await findAndValidateAlert(context, alertIdNum);
+    if (!alert) return;
 
-    if (!alert) {
-      context.res = {
-        status: 404,
-        body: {
-          success: false,
-          message: 'Alerta no encontrada',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
-
-    // Note: New schema doesn't have status field, just is_active
     const updatedAlert = await db.update('nubestock.tb_mae_alert', alertIdNum, {
       is_active: false,
       modification_date: new Date(),
     });
 
     if (!updatedAlert) {
-      context.res = {
-        status: 500,
-        body: {
-          success: false,
-          message: 'Error al descartar la alerta',
-          timestamp: new Date().toISOString(),
-        },
-      };
+      context.res = createErrorResponse(500, 'Error al descartar la alerta');
       return;
     }
 
@@ -465,32 +348,14 @@ export async function dismissAlert(context: Context, req: HttpRequest, alertId: 
       },
     };
   } catch (error) {
-    logger.error('Error al descartar alerta:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al descartar la alerta',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'descartar alerta');
   }
 }
 
 export async function updateAlert(context: Context, req: HttpRequest, alertId: string): Promise<void> {
   try {
-    const alertIdNum = Number.parseInt(alertId, 10);
-    if (Number.isNaN(alertIdNum)) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'ID de alerta inválido',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const alertIdNum = validateAlertId(context, alertId);
+    if (alertIdNum === null) return;
 
     const updateSchema = Joi.object({
       is_active: Joi.boolean().optional(),
@@ -518,18 +383,8 @@ export async function updateAlert(context: Context, req: HttpRequest, alertId: s
       return;
     }
 
-    const alert = await db.findById('nubestock.tb_mae_alert', alertIdNum);
-    if (!alert) {
-      context.res = {
-        status: 404,
-        body: {
-          success: false,
-          message: 'Alerta no encontrada',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const alert = await findAndValidateAlert(context, alertIdNum);
+    if (!alert) return;
 
     const updateData: any = {
       modification_date: new Date(),
@@ -558,14 +413,7 @@ export async function updateAlert(context: Context, req: HttpRequest, alertId: s
     const updatedAlert = await db.update('nubestock.tb_mae_alert', alertIdNum, updateData);
 
     if (!updatedAlert) {
-      context.res = {
-        status: 500,
-        body: {
-          success: false,
-          message: 'Error al actualizar alerta',
-          timestamp: new Date().toISOString(),
-        },
-      };
+      context.res = createErrorResponse(500, 'Error al actualizar alerta');
       return;
     }
 
@@ -579,57 +427,22 @@ export async function updateAlert(context: Context, req: HttpRequest, alertId: s
       },
     };
   } catch (error) {
-    logger.error('Error al actualizar alerta:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al actualizar alerta',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'actualizar alerta');
   }
 }
 
 export async function deleteAlert(context: Context, req: HttpRequest, alertId: string): Promise<void> {
   try {
-    const alertIdNum = Number.parseInt(alertId, 10);
-    if (Number.isNaN(alertIdNum)) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'ID de alerta inválido',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const alertIdNum = validateAlertId(context, alertId);
+    if (alertIdNum === null) return;
 
-    const alert = await db.findById('nubestock.tb_mae_alert', alertIdNum);
-    if (!alert) {
-      context.res = {
-        status: 404,
-        body: {
-          success: false,
-          message: 'Alerta no encontrada',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const alert = await findAndValidateAlert(context, alertIdNum);
+    if (!alert) return;
 
     const deleted = await db.delete('nubestock.tb_mae_alert', alertIdNum);
 
     if (!deleted) {
-      context.res = {
-        status: 500,
-        body: {
-          success: false,
-          message: 'Error al eliminar alerta',
-          timestamp: new Date().toISOString(),
-        },
-      };
+      context.res = createErrorResponse(500, 'Error al eliminar alerta');
       return;
     }
 
@@ -642,14 +455,6 @@ export async function deleteAlert(context: Context, req: HttpRequest, alertId: s
       },
     };
   } catch (error) {
-    logger.error('Error al eliminar alerta:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al eliminar alerta',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'eliminar alerta');
   }
 }
