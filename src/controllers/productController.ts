@@ -2,6 +2,7 @@ import { Context, HttpRequest } from '../types/azure-functions';
 import { Database } from '../config/database';
 import { logger } from '../config/logger';
 import { createStockLowAlert } from '../utils/alertHelper';
+import { assignIfDefined } from '../utils/controllerHelpers';
 import Joi from 'joi';
 
 const db = Database.getInstance();
@@ -451,15 +452,7 @@ export async function updateProduct(context: Context, req: HttpRequest, productI
       modification_date: new Date(),
     };
 
-    if (value.name !== undefined) updateData.name = value.name;
-    if (value.sku !== undefined) updateData.sku = value.sku;
-    if (value.id_category !== undefined) updateData.id_category = value.id_category;
-    if (value.id_origin !== undefined) updateData.id_origin = value.id_origin;
-    if (value.id_measure !== undefined) updateData.id_measure = value.id_measure;
-    if (value.quantity !== undefined) updateData.quantity = value.quantity;
-    if (value.min_stock !== undefined) updateData.min_stock = value.min_stock;
-    if (value.price !== undefined) updateData.price = value.price;
-    if (value.is_active !== undefined) updateData.is_active = value.is_active;
+    assignIfDefined(updateData, value);
 
     const updatedProduct = await db.update('nubestock.tb_ope_product', productIdNum, updateData);
 

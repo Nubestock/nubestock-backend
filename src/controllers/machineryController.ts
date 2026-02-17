@@ -2,7 +2,7 @@ import { Context, HttpRequest } from '../types/azure-functions';
 import { Database } from '../config/database';
 import { Machinery } from '../interfaces';
 import Joi from 'joi';
-import { validateSchema, createErrorResponse, handleError, validateId } from '../utils/controllerHelpers';
+import { validateSchema, createErrorResponse, handleError, validateId, assignIfDefined } from '../utils/controllerHelpers';
 
 const db = Database.getInstance();
 
@@ -151,18 +151,7 @@ export async function updateMachinery(context: Context, req: HttpRequest, machin
     const updateData: any = {
       modification_date: new Date(),
     };
-
-    if (value.name !== undefined) {
-      updateData.name = value.name;
-    }
-
-    if (value.description !== undefined) {
-      updateData.description = value.description;
-    }
-
-    if (value.is_active !== undefined) {
-      updateData.is_active = value.is_active;
-    }
+    assignIfDefined(updateData, value);
 
     const [updatedMachinery] = await db.getConnection()
       .where('id', machineryIdNum)

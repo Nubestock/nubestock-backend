@@ -1,7 +1,7 @@
 import { Context, HttpRequest } from '../types/azure-functions';
 import { Database } from '../config/database';
 import Joi from 'joi';
-import { validateSchema, createErrorResponse, handleError, validateIdRequired, validateId } from '../utils/controllerHelpers';
+import { validateSchema, createErrorResponse, handleError, validateIdRequired, validateId, assignIfDefined } from '../utils/controllerHelpers';
 
 const db = Database.getInstance();
 
@@ -178,16 +178,7 @@ export async function updateMeasure(context: Context, req: HttpRequest): Promise
     const updateData: any = {
       modification_date: new Date(),
     };
-
-    if (value.name !== undefined) {
-      updateData.name = value.name;
-    }
-    if (value.description !== undefined) {
-      updateData.description = value.description;
-    }
-    if (value.is_active !== undefined) {
-      updateData.is_active = value.is_active;
-    }
+    assignIfDefined(updateData, value);
 
     const updatedMeasure = await db.update('nubestock.tb_mae_measure', measureIdNum, updateData);
 

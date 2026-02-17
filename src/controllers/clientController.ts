@@ -2,6 +2,7 @@ import { Context, HttpRequest } from '../types/azure-functions';
 import { Database } from '../config/database';
 import { logger } from '../config/logger';
 import { Client } from '../interfaces';
+import { assignIfDefined } from '../utils/controllerHelpers';
 import Joi from 'joi';
 
 const db = Database.getInstance();
@@ -328,18 +329,7 @@ export async function updateClient(context: Context, req: HttpRequest, clientId:
     const updateData: any = {
       modification_date: new Date(),
     };
-    if (value.name !== undefined) updateData.name = value.name;
-    if (value.identification !== undefined) updateData.identification = value.identification;
-    if (value.identification_type !== undefined) updateData.identification_type = value.identification_type;
-    if (value.email !== undefined) updateData.email = value.email;
-    if (value.phone !== undefined) updateData.phone = value.phone;
-    if (value.address !== undefined) updateData.address = value.address;
-    if (value.id_province !== undefined) updateData.id_province = value.id_province;
-    if (value.id_city !== undefined) updateData.id_city = value.id_city;
-    if (value.requires_credit !== undefined) updateData.requires_credit = value.requires_credit;
-    if (value.credit_limit !== undefined) updateData.credit_limit = value.credit_limit;
-    if (value.credit_days !== undefined) updateData.credit_days = value.credit_days;
-    if (value.is_active !== undefined) updateData.is_active = value.is_active;
+    assignIfDefined(updateData, value);
 
     const updatedClient = await db.update('nubestock.tb_mae_client', clientIdNum, updateData);
 

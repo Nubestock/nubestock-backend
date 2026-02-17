@@ -109,3 +109,29 @@ export function validateId(
   }
   return idNum;
 }
+
+/**
+ * Asigna propiedades de un objeto fuente a un objeto destino solo si están definidas (no undefined)
+ * Útil para actualizaciones parciales donde solo se actualizan los campos proporcionados
+ * 
+ * @param target - Objeto destino donde se asignarán las propiedades
+ * @param source - Objeto fuente con propiedades opcionales
+ * @returns El objeto destino modificado
+ * 
+ * @example
+ * const updateData: any = { modification_date: new Date() };
+ * assignIfDefined(updateData, { name: 'New Name', sku: undefined, price: 100 });
+ * // updateData ahora tiene: { modification_date: Date, name: 'New Name', price: 100 }
+ * // sku no se asignó porque era undefined
+ */
+export function assignIfDefined<T extends Record<string, any>>(
+  target: T,
+  source: Partial<T>
+): T {
+  for (const key in source) {
+    if (source[key] !== undefined) {
+      target[key] = source[key] as T[Extract<keyof T, string>];
+    }
+  }
+  return target;
+}
