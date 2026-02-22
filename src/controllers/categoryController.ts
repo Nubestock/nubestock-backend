@@ -27,7 +27,7 @@ function validateCategoryId(context: Context, categoryId: string): number | null
  * Retorna la categoría si existe y está activa, null si no (y establece respuesta 404)
  */
 async function findAndValidateCategory(context: Context, categoryIdNum: number, checkActive: boolean = false): Promise<Record<string, any> | null> {
-  const category = await db.findById('nubestock.tb_mae_category', categoryIdNum) as Record<string, any> | undefined;
+  const category = await db.findById<Record<string, any>>('nubestock.tb_mae_category', categoryIdNum);
   
   if (!category || (checkActive && !category.is_active)) {
     context.res = {

@@ -7,6 +7,49 @@ import Joi from 'joi';
 
 const db = Database.getInstance();
 
+/**
+ * Valida que el ID del producto sea un número válido
+ * @returns El ID numérico si es válido, null si no (y establece la respuesta de error)
+ */
+function validateProductId(context: Context, productId: string): number | null {
+  const productIdNum = Number.parseInt(productId, 10);
+  if (Number.isNaN(productIdNum)) {
+    context.res = {
+      status: 400,
+      body: {
+        success: false,
+        message: 'ID de producto inválido',
+        timestamp: new Date().toISOString(),
+      },
+    };
+    return null;
+  }
+  return productIdNum;
+}
+
+/**
+ * Verifica que un producto existe en la base de datos
+ * @returns El producto si existe, null si no existe (y establece la respuesta de error)
+ */
+async function verifyProductExists(
+  context: Context,
+  productIdNum: number
+): Promise<Record<string, any> | null> {
+  const existingProduct = await db.findById('nubestock.tb_ope_product', productIdNum) as Record<string, any> | undefined;
+  if (!existingProduct) {
+    context.res = {
+      status: 404,
+      body: {
+        success: false,
+        message: 'Producto no encontrado',
+        timestamp: new Date().toISOString(),
+      },
+    };
+    return null;
+  }
+  return existingProduct;
+}
+
 // Función para generar alertas de stock bajo
 async function generateStockAlert(product: any): Promise<void> {
   try {
@@ -133,18 +176,8 @@ export async function listProducts(context: Context, req: HttpRequest): Promise<
 
 export async function getProduct(context: Context, req: HttpRequest, productId: string): Promise<void> {
   try {
-    const productIdNum = Number.parseInt(productId, 10);
-    if (Number.isNaN(productIdNum)) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'ID de producto inválido',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const productIdNum = validateProductId(context, productId);
+    if (productIdNum === null) return;
 
     const product = await db.getConnection()
       .select(
@@ -354,34 +387,14 @@ export async function createProduct(context: Context, req: HttpRequest): Promise
 
 export async function updateProduct(context: Context, req: HttpRequest, productId: string): Promise<void> {
   try {
-    const productIdNum = Number.parseInt(productId, 10);
-    if (Number.isNaN(productIdNum)) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'ID de producto inválido',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const productIdNum = validateProductId(context, productId);
+    if (productIdNum === null) return;
 
     // Primero obtener el producto existente para conocer su tipo actual
-    const existingProduct = await db.findById('nubestock.tb_ope_product', productIdNum);
-    if (!existingProduct) {
-      context.res = {
-        status: 404,
-        body: {
-          success: false,
-          message: 'Producto no encontrado',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const existingProduct = await verifyProductExists(context, productIdNum);
+    if (!existingProduct) return;
 
-    const currentType = (existingProduct as any)?.type || 'PF';
+    const currentType = existingProduct.type || 'PF';
     const newType = req.body?.type || currentType; // Tipo nuevo (si se actualiza) o el actual
 
     // Validación condicional: usar el tipo actual para validar los valores existentes
@@ -427,7 +440,7 @@ export async function updateProduct(context: Context, req: HttpRequest, productI
     }
 
     // Si se está actualizando el SKU, verificar que no exista otro producto con ese SKU
-    if (value.sku && value.sku !== (existingProduct as any).sku) {
+    if (value.sku && value.sku !== existingProduct.sku) {
       const duplicateProduct = await db.getConnection()
         .select('id')
         .from('nubestock.tb_ope_product')
@@ -512,32 +525,12 @@ export async function updateProduct(context: Context, req: HttpRequest, productI
 
 export async function deleteProduct(context: Context, req: HttpRequest, productId: string): Promise<void> {
   try {
-    const productIdNum = Number.parseInt(productId, 10);
-    if (Number.isNaN(productIdNum)) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'ID de producto inválido',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const productIdNum = validateProductId(context, productId);
+    if (productIdNum === null) return;
 
     // Verificar que el producto existe
-    const existingProduct = await db.findById('nubestock.tb_ope_product', productIdNum);
-    if (!existingProduct) {
-      context.res = {
-        status: 404,
-        body: {
-          success: false,
-          message: 'Producto no encontrado',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const existingProduct = await verifyProductExists(context, productIdNum);
+    if (!existingProduct) return;
 
     // Eliminar el producto (soft delete - marcar como inactivo)
     const deletedProduct = await db.update('nubestock.tb_ope_product', productIdNum, {

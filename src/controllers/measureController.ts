@@ -16,7 +16,7 @@ function validateMeasureId(context: Context, measureId: string): number | null {
 }
 
 async function findAndValidateMeasure(context: Context, measureIdNum: number, checkActive: boolean = false): Promise<Record<string, any> | null> {
-  const measure = await db.findById('nubestock.tb_mae_measure', measureIdNum) as Record<string, any> | undefined;
+  const measure = await db.findById<Record<string, any>>('nubestock.tb_mae_measure', measureIdNum);
   
   if (!measure || (checkActive && !measure.is_active)) {
     context.res = {

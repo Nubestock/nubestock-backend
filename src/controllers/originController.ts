@@ -79,7 +79,7 @@ export async function listOrigins(context: Context, req: HttpRequest): Promise<v
         .where('o.id', originIdNum)
         .first();
 
-      if (!origin || !origin.is_active) {
+      if (!origin?.is_active) {
         context.res = {
           status: 404,
           body: {

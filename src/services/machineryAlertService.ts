@@ -56,7 +56,7 @@ async function createMaintenanceAlerts(
       title = `${config.titlePrefix}: ${maintenance.maintenance_name}`;
       message = `El mantenimiento "${maintenance.maintenance_name}" de la maquinaria "${maintenance.machinery_name}" estaba programado para ${dueDate.toLocaleDateString()} y ya ha vencido.`;
     } else {
-      const daysUntilDue = Math.ceil((dueDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+      const daysUntilDue = Math.ceil((dueDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
       title = `${config.titlePrefix}: ${maintenance.maintenance_name}`;
       message = `El mantenimiento "${maintenance.maintenance_name}" de la maquinaria "${maintenance.machinery_name}" está programado para ${dueDate.toLocaleDateString()} (en ${daysUntilDue} día(s)).`;
     }
