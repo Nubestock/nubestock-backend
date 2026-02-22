@@ -10,6 +10,46 @@ function validateRoleId(context: Context, roleId: string): number | null {
   return validateId(context, roleId, 'rol');
 }
 
+/**
+ * Parsea y valida una lista de IDs de permisos
+ * @returns Los IDs válidos si todos existen, null si hay IDs inválidos (y establece la respuesta de error)
+ */
+async function parseAndValidatePermissionIds(
+  context: Context,
+  permissions: any[]
+): Promise<number[] | null> {
+  const permissionIds = permissions
+    .map(p => typeof p === 'string' ? Number.parseInt(p, 10) : p)
+    .filter(p => !Number.isNaN(p));
+
+  if (permissionIds.length === 0) {
+    return [];
+  }
+
+  const existingPermissions = await db.getConnection()
+    .select('id')
+    .from('nubestock.tb_mae_permission')
+    .whereIn('id', permissionIds)
+    .where('is_active', true);
+
+  const existingIds = existingPermissions.map((p: any) => p.id);
+  const invalidIds = permissionIds.filter(id => !existingIds.includes(id));
+
+  if (invalidIds.length > 0) {
+    context.res = {
+      status: 400,
+      body: {
+        success: false,
+        message: `Los siguientes IDs de permisos no existen: ${invalidIds.join(', ')}`,
+        timestamp: new Date().toISOString(),
+      },
+    };
+    return null;
+  }
+
+  return permissionIds;
+}
+
 export async function listRoles(context: Context, req: HttpRequest): Promise<void> {
   try {
     const roles = await db.getConnection()
@@ -183,41 +223,15 @@ export async function createRole(context: Context, req: HttpRequest): Promise<vo
 
     // Asignar permisos si se proporcionan
     if (permissions && Array.isArray(permissions)) {
-      // Validar que todos los permisos existan antes de asignarlos
-      const permissionIds = permissions
-        .map(p => typeof p === 'string' ? Number.parseInt(p, 10) : p)
-        .filter(p => !Number.isNaN(p));
+      const permissionIds = await parseAndValidatePermissionIds(context, permissions);
+      if (permissionIds === null) return;
 
-      if (permissionIds.length > 0) {
-        const existingPermissions = await db.getConnection()
-          .select('id')
-          .from('nubestock.tb_mae_permission')
-          .whereIn('id', permissionIds)
-          .where('is_active', true);
-
-        const existingIds = existingPermissions.map(p => p.id);
-        const invalidIds = permissionIds.filter(id => !existingIds.includes(id));
-
-        if (invalidIds.length > 0) {
-          context.res = {
-            status: 400,
-            body: {
-              success: false,
-              message: `Los siguientes IDs de permisos no existen: ${invalidIds.join(', ')}`,
-              timestamp: new Date().toISOString(),
-            },
-          };
-          return;
-        }
-
-        // Agregar nuevos permisos
-        for (const permissionId of permissionIds) {
-          await db.create('nubestock.tb_mae_role_permission', {
-            id_role: (newRole as any).id,
-            id_permission: permissionId,
-            is_active: true,
-          });
-        }
+      for (const permissionId of permissionIds) {
+        await db.create('nubestock.tb_mae_role_permission', {
+          id_role: (newRole as any).id,
+          id_permission: permissionId,
+          is_active: true,
+        });
       }
     }
 
@@ -276,33 +290,10 @@ export async function updateRole(context: Context, req: HttpRequest, roleId: str
 
     // Actualizar permisos si se proporcionan
     if (permissions && Array.isArray(permissions)) {
-      // Validar que todos los permisos existan antes de asignarlos
-      const permissionIds = permissions
-        .map(p => typeof p === 'string' ? Number.parseInt(p, 10) : p)
-        .filter(p => !Number.isNaN(p));
+      const permissionIds = await parseAndValidatePermissionIds(context, permissions);
+      if (permissionIds === null) return;
 
       if (permissionIds.length > 0) {
-        const existingPermissions = await db.getConnection()
-          .select('id')
-          .from('nubestock.tb_mae_permission')
-          .whereIn('id', permissionIds)
-          .where('is_active', true);
-
-        const existingIds = existingPermissions.map(p => p.id);
-        const invalidIds = permissionIds.filter(id => !existingIds.includes(id));
-
-        if (invalidIds.length > 0) {
-          context.res = {
-            status: 400,
-            body: {
-              success: false,
-              message: `Los siguientes IDs de permisos no existen: ${invalidIds.join(', ')}`,
-              timestamp: new Date().toISOString(),
-            },
-          };
-          return;
-        }
-
         // Eliminar permisos existentes (soft delete: marcar como inactivos)
         await db.getConnection()
           .from('nubestock.tb_mae_role_permission')

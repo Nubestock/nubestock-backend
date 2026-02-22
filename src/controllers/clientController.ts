@@ -1,11 +1,69 @@
 import { Context, HttpRequest } from '../types/azure-functions';
 import { Database } from '../config/database';
 import { logger } from '../config/logger';
-import { Client } from '../interfaces';
-import { assignIfDefined } from '../utils/controllerHelpers';
+import { assignIfDefined, handleError } from '../utils/controllerHelpers';
 import Joi from 'joi';
 
 const db = Database.getInstance();
+
+/**
+ * Esquema de validación para crear un cliente
+ */
+export const clientSchema = Joi.object({
+  name: Joi.string().min(2).max(200).required(),
+  id_city: Joi.number().integer().required(),
+  id_province: Joi.number().integer().required(),
+  identification: Joi.string().min(10).max(13).required().messages({
+    'string.min': 'La identificación debe tener mínimo 10 caracteres',
+    'string.max': 'La identificación debe tener máximo 13 caracteres',
+    'any.required': 'La identificación es requerida'
+  }),
+  identification_type: Joi.string().valid('CED', 'RUC').required(),
+  email: Joi.string().email().max(200).required(),
+  phone: Joi.string().min(7).max(20).required(),
+  address: Joi.string().max(500).required(),
+  requires_credit: Joi.boolean().default(false),
+  credit_limit: Joi.number().min(0).optional().allow(null),
+  credit_days: Joi.number().min(0).default(0),
+});
+
+/**
+ * Valida que el ID del cliente sea un número válido
+ */
+function validateClientId(context: Context, clientId: string): number | null {
+  const clientIdNum = Number.parseInt(clientId, 10);
+  if (Number.isNaN(clientIdNum)) {
+    context.res = {
+      status: 400,
+      body: {
+        success: false,
+        message: 'ID de cliente inválido',
+        timestamp: new Date().toISOString(),
+      },
+    };
+    return null;
+  }
+  return clientIdNum;
+}
+
+/**
+ * Verifica que un cliente existe
+ */
+async function verifyClientExists(context: Context, clientIdNum: number): Promise<Record<string, any> | null> {
+  const client = await db.findById<Record<string, any>>('nubestock.tb_mae_client', clientIdNum);
+  if (!client) {
+    context.res = {
+      status: 404,
+      body: {
+        success: false,
+        message: 'Cliente no encontrado',
+        timestamp: new Date().toISOString(),
+      },
+    };
+    return null;
+  }
+  return client;
+}
 
 export async function listClients(context: Context, req: HttpRequest): Promise<void> {
   try {
@@ -58,32 +116,14 @@ export async function listClients(context: Context, req: HttpRequest): Promise<v
       },
     };
   } catch (error) {
-    logger.error('Error al listar clientes:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al listar clientes',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'listar clientes');
   }
 }
 
 export async function getClient(context: Context, req: HttpRequest, clientId: string): Promise<void> {
   try {
-    const clientIdNum = Number.parseInt(clientId, 10);
-    if (Number.isNaN(clientIdNum)) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'ID de cliente inválido',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const clientIdNum = validateClientId(context, clientId);
+    if (clientIdNum === null) return;
 
     const client = await db.getConnection()
       .select(
@@ -133,38 +173,12 @@ export async function getClient(context: Context, req: HttpRequest, clientId: st
       },
     };
   } catch (error) {
-    logger.error('Error al obtener cliente:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al obtener cliente',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'obtener cliente');
   }
 }
 
 export async function createClient(context: Context, req: HttpRequest): Promise<void> {
   try {
-    const clientSchema = Joi.object({
-      name: Joi.string().min(2).max(200).required(),
-      id_city: Joi.number().integer().required(),
-      id_province: Joi.number().integer().required(),
-      identification: Joi.string().min(10).max(13).required().messages({
-        'string.min': 'La identificación debe tener mínimo 10 caracteres',
-        'string.max': 'La identificación debe tener máximo 13 caracteres',
-        'any.required': 'La identificación es requerida'
-      }),
-      identification_type: Joi.string().valid('CED', 'RUC').required(),
-      email: Joi.string().email().max(200).required(),
-      phone: Joi.string().min(7).max(20).required(),
-      address: Joi.string().max(500).required(),
-      requires_credit: Joi.boolean().default(false),
-      credit_limit: Joi.number().min(0).optional().allow(null),
-      credit_days: Joi.number().min(0).default(0),
-    });
-
     const { error, value } = clientSchema.validate(req.body);
     
     if (error) {
@@ -227,32 +241,14 @@ export async function createClient(context: Context, req: HttpRequest): Promise<
       },
     };
   } catch (error) {
-    logger.error('Error al crear cliente:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al crear cliente',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'crear cliente');
   }
 }
 
 export async function updateClient(context: Context, req: HttpRequest, clientId: string): Promise<void> {
   try {
-    const clientIdNum = Number.parseInt(clientId, 10);
-    if (Number.isNaN(clientIdNum)) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'ID de cliente inválido',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const clientIdNum = validateClientId(context, clientId);
+    if (clientIdNum === null) return;
 
     const updateSchema = Joi.object({
       name: Joi.string().min(2).max(200).optional(),
@@ -291,21 +287,11 @@ export async function updateClient(context: Context, req: HttpRequest, clientId:
     }
 
     // Verificar si el cliente existe
-    const existingClient = await db.findById('nubestock.tb_mae_client', clientIdNum);
-    if (!existingClient) {
-      context.res = {
-        status: 404,
-        body: {
-          success: false,
-          message: 'Cliente no encontrado',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const existingClient = await verifyClientExists(context, clientIdNum);
+    if (!existingClient) return;
 
     // Verificar si la identificación ya existe (si se está cambiando)
-    if (value.identification && value.identification !== (existingClient as any).identification) {
+    if (value.identification && value.identification !== existingClient.identification) {
       const identificationExists = await db.getConnection()
         .select('id')
         .from('nubestock.tb_mae_client')
@@ -355,46 +341,17 @@ export async function updateClient(context: Context, req: HttpRequest, clientId:
       },
     };
   } catch (error) {
-    logger.error('Error al actualizar cliente:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al actualizar cliente',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'actualizar cliente');
   }
 }
 
 export async function deleteClient(context: Context, req: HttpRequest, clientId: string): Promise<void> {
   try {
-    const clientIdNum = Number.parseInt(clientId, 10);
-    if (Number.isNaN(clientIdNum)) {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'ID de cliente inválido',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const clientIdNum = validateClientId(context, clientId);
+    if (clientIdNum === null) return;
 
-    const client = await db.findById('nubestock.tb_mae_client', clientIdNum);
-
-    if (!client) {
-      context.res = {
-        status: 404,
-        body: {
-          success: false,
-          message: 'Cliente no encontrado',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const client = await verifyClientExists(context, clientIdNum);
+    if (!client) return;
 
     // Soft delete: desactivar en lugar de eliminar
     const deleted = await db.update('nubestock.tb_mae_client', clientIdNum, {
@@ -423,14 +380,6 @@ export async function deleteClient(context: Context, req: HttpRequest, clientId:
       },
     };
   } catch (error) {
-    logger.error('Error al eliminar cliente:', error);
-    context.res = {
-      status: 500,
-      body: {
-        success: false,
-        message: 'Error al eliminar cliente',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleError(context, error, 'eliminar cliente');
   }
 }

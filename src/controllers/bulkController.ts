@@ -3,6 +3,7 @@ import { Database } from '../config/database';
 import { logger } from '../config/logger';
 import { requireAuth } from '../middleware/authMiddleware';
 import { createStockTransactionAndAlert } from '../utils/stockTransaction';
+import { clientSchema } from './clientController';
 import Joi from 'joi';
 
 const db = Database.getInstance();
@@ -864,22 +865,8 @@ export async function bulkCreateMaterials(context: Context, req: HttpRequest): P
  */
 export async function bulkCreateClients(context: Context, req: HttpRequest): Promise<void> {
   try {
-    const clientSchema = Joi.object({
-      name: Joi.string().min(2).max(200).required(),
-      id_city: Joi.number().integer().required(),
-      id_province: Joi.number().integer().required(),
-      identification: Joi.string().min(10).max(13).required().messages({
-        'string.min': 'La identificación debe tener mínimo 10 caracteres',
-        'string.max': 'La identificación debe tener máximo 13 caracteres',
-        'any.required': 'La identificación es requerida'
-      }),
-      identification_type: Joi.string().valid('CED', 'RUC').required(),
-      email: Joi.string().email().max(200).required(),
-      phone: Joi.string().min(7).max(20).required(),
-      address: Joi.string().max(500).required(),
-      requires_credit: Joi.boolean().default(false),
-      credit_limit: Joi.number().min(0).optional().allow(null),
-      credit_days: Joi.number().min(0).default(0),
+    // Extend clientSchema for bulk operations (adds is_active field)
+    const bulkClientSchema = clientSchema.keys({
       is_active: Joi.boolean().optional(),
     });
 
@@ -917,7 +904,7 @@ export async function bulkCreateClients(context: Context, req: HttpRequest): Pro
 
     // Verificar duplicados dentro del batch
     clients.forEach((client, index) => {
-      const { error, value } = clientSchema.validate(client);
+      const { error, value } = bulkClientSchema.validate(client);
       if (error) {
         validationErrors.push({
           index,
