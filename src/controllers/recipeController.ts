@@ -16,6 +16,72 @@ function validateRecipeId(context: Context, recipeId: string): number | null {
   return validateId(context, recipeId, 'receta');
 }
 
+/**
+ * Verifica que un producto final (type='PF') existe y está activo
+ * @returns El producto si existe, null si no existe (y establece la respuesta de error)
+ */
+async function verifyFinalProductExists(
+  context: Context,
+  productId: number,
+  selectFields: string[] = ['*']
+): Promise<Record<string, any> | null> {
+  const product = await db.getConnection()
+    .select(...selectFields)
+    .from('nubestock.tb_ope_product')
+    .where('id', productId)
+    .where('type', 'PF')
+    .where('is_active', true)
+    .first();
+
+  if (!product) {
+    context.res = {
+      status: 404,
+      body: {
+        success: false,
+        message: 'Producto final no encontrado',
+        timestamp: new Date().toISOString(),
+      },
+    };
+    return null;
+  }
+  return product;
+}
+
+/**
+ * Verifica que todos los materiales (type='MP') existen y están activos
+ * @returns true si todos existen, false si hay faltantes (y establece la respuesta de error)
+ */
+async function verifyMaterialsExist(
+  context: Context,
+  materialIds: number[]
+): Promise<boolean> {
+  if (materialIds.length === 0) return true;
+
+  const existingMaterials = await db.getConnection()
+    .select('id')
+    .from('nubestock.tb_ope_product')
+    .whereIn('id', materialIds)
+    .where('type', 'MP')
+    .where('is_active', true);
+
+  if (existingMaterials.length !== materialIds.length) {
+    const foundIds = existingMaterials.map((m: any) => m.id);
+    const missingIds = materialIds.filter((id: number) => !foundIds.includes(id));
+
+    context.res = {
+      status: 400,
+      body: {
+        success: false,
+        message: 'Algunos materiales no existen o están inactivos',
+        missingMaterials: missingIds,
+        timestamp: new Date().toISOString(),
+      },
+    };
+    return false;
+  }
+  return true;
+}
+
 export async function listRecipes(context: Context, req: HttpRequest): Promise<void> {
   try {
     const productId = (req.query.productId as string) || (req.query.id_product as string);
@@ -123,50 +189,13 @@ export async function createRecipe(context: Context, req: HttpRequest): Promise<
     const { id_product, materials } = value;
 
     // Verificar que el producto final existe
-    const product = await db.getConnection()
-      .select('*')
-      .from('nubestock.tb_ope_product')
-      .where('id', id_product)
-      .where('type', 'PF')
-      .where('is_active', true)
-      .first();
-      
-    if (!product) {
-      context.res = {
-        status: 404,
-        body: {
-          success: false,
-          message: 'Producto final no encontrado',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const product = await verifyFinalProductExists(context, id_product);
+    if (!product) return;
 
     // Verificar que todos los materiales existen
     const materialIds = materials.map((m: any) => m.id_product);
-    const existingMaterials = await db.getConnection()
-      .select('id')
-      .from('nubestock.tb_ope_product')
-      .whereIn('id', materialIds)
-      .where('type', 'MP')
-      .where('is_active', true);
-
-    if (existingMaterials.length !== materialIds.length) {
-      const foundIds = existingMaterials.map((m: any) => m.id);
-      const missingIds = materialIds.filter((id: number) => !foundIds.includes(id));
-      
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'Algunos materiales no existen o están inactivos',
-          missingMaterials: missingIds,
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const materialsValid = await verifyMaterialsExist(context, materialIds);
+    if (!materialsValid) return;
 
     // Crear receta y relaciones receta-material en una transacción
     const result = await db.transaction(async (trx) => {
@@ -310,52 +339,13 @@ export async function updateProductRecipe(context: Context, req: HttpRequest): P
     const { id_product, materials } = value;
 
     // Verificar que el producto final existe
-    const product = await db.getConnection()
-      .select('id')
-      .from('nubestock.tb_ope_product')
-      .where('id', id_product)
-      .where('type', 'PF')
-      .where('is_active', true)
-      .first();
-
-    if (!product) {
-      context.res = {
-        status: 404,
-        body: {
-          success: false,
-          message: 'Producto final no encontrado',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
+    const product = await verifyFinalProductExists(context, id_product, ['id']);
+    if (!product) return;
 
     // Verificar que todos los materiales existen
     const materialIds = materials.map((m: any) => m.id_product);
-    if (materialIds.length > 0) {
-      const existingMaterials = await db.getConnection()
-        .select('id')
-        .from('nubestock.tb_ope_product')
-        .whereIn('id', materialIds)
-        .where('type', 'MP')
-        .where('is_active', true);
-
-      if (existingMaterials.length !== materialIds.length) {
-        const foundIds = existingMaterials.map((m: any) => m.id);
-        const missingIds = materialIds.filter((id: number) => !foundIds.includes(id));
-        
-        context.res = {
-          status: 400,
-          body: {
-            success: false,
-            message: 'Algunos materiales no existen o están inactivos',
-            missingMaterials: missingIds,
-            timestamp: new Date().toISOString(),
-          },
-        };
-        return;
-      }
-    }
+    const materialsValid = await verifyMaterialsExist(context, materialIds);
+    if (!materialsValid) return;
 
     // Obtener o crear receta para el producto
     const receipe = await db.getConnection()
