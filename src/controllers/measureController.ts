@@ -15,10 +15,10 @@ function validateMeasureId(context: Context, measureId: string): number | null {
   return validateId(context, measureId, 'medida');
 }
 
-async function findAndValidateMeasure(context: Context, measureIdNum: number, checkActive: boolean = false): Promise<any | null> {
-  const measure = await db.findById('nubestock.tb_mae_measure', measureIdNum);
+async function findAndValidateMeasure(context: Context, measureIdNum: number, checkActive: boolean = false): Promise<Record<string, any> | null> {
+  const measure = await db.findById('nubestock.tb_mae_measure', measureIdNum) as Record<string, any> | undefined;
   
-  if (!measure || (checkActive && !(measure as any).is_active)) {
+  if (!measure || (checkActive && !measure.is_active)) {
     context.res = {
       status: 404,
       body: {
@@ -160,7 +160,7 @@ export async function updateMeasure(context: Context, req: HttpRequest): Promise
     if (!existingMeasure) return;
 
     // Si se está actualizando el nombre, verificar que no exista otra medida con ese nombre
-    if (value.name && value.name !== (existingMeasure as any).name) {
+    if (value.name && value.name !== existingMeasure.name) {
       const duplicateMeasure = await db.getConnection()
         .select('id')
         .from('nubestock.tb_mae_measure')

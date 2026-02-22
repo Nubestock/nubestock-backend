@@ -26,10 +26,10 @@ function validateCategoryId(context: Context, categoryId: string): number | null
  * Busca una categoría por ID y valida que exista y esté activa
  * Retorna la categoría si existe y está activa, null si no (y establece respuesta 404)
  */
-async function findAndValidateCategory(context: Context, categoryIdNum: number, checkActive: boolean = false): Promise<any | null> {
-  const category = await db.findById('nubestock.tb_mae_category', categoryIdNum);
+async function findAndValidateCategory(context: Context, categoryIdNum: number, checkActive: boolean = false): Promise<Record<string, any> | null> {
+  const category = await db.findById('nubestock.tb_mae_category', categoryIdNum) as Record<string, any> | undefined;
   
-  if (!category || (checkActive && !(category as any).is_active)) {
+  if (!category || (checkActive && !category.is_active)) {
     context.res = {
       status: 404,
       body: {
@@ -150,7 +150,7 @@ export async function updateCategory(context: Context, req: HttpRequest): Promis
     if (!existingCategory) return;
 
     // Si se está actualizando el nombre, verificar que no exista otra categoría con ese nombre
-    if (value.name && value.name !== (existingCategory as any).name) {
+    if (value.name && value.name !== existingCategory.name) {
       const duplicateCategory = await db.getConnection()
         .select('id')
         .from('nubestock.tb_mae_category')

@@ -15,7 +15,7 @@ function validateMaterialId(context: Context, materialId: string): number | null
   return validateId(context, materialId, 'material');
 }
 
-async function findAndValidateMaterial(context: Context, materialIdNum: number): Promise<any | null> {
+async function findAndValidateMaterial(context: Context, materialIdNum: number): Promise<Record<string, any> | null> {
   const existingMaterial = await db.getConnection()
     .select('id', 'sku')
     .from('nubestock.tb_ope_product')

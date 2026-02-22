@@ -215,7 +215,7 @@ export async function getProduct(context: Context, req: HttpRequest, productId: 
           .where('pr.is_active', true)
           .where('mp.is_active', true);
 
-        (product as any).recipe = {
+        product.recipe = {
           id: recipe.receipe_id,
           name: recipe.receipe_name,
           description: recipe.receipe_description,

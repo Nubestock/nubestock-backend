@@ -6,7 +6,7 @@ import Joi from 'joi';
  * Valida un esquema Joi y retorna respuesta 400 si hay errores
  * Retorna el valor validado si es válido, null si se estableció respuesta de error
  */
-export function validateSchema(context: Context, schema: Joi.ObjectSchema, data: any): any | null {
+export function validateSchema(context: Context, schema: Joi.ObjectSchema, data: any): Record<string, any> | null {
   const { error, value } = schema.validate(data);
   if (error) {
     context.res = {

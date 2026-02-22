@@ -21,8 +21,8 @@ function validateAlertId(context: Context, alertId: string): number | null {
  * Busca una alerta por ID y valida que exista
  * Retorna la alerta si existe, null si no existe (y establece respuesta 404)
  */
-async function findAndValidateAlert(context: Context, alertIdNum: number): Promise<any | null> {
-  const alert = await db.findById('nubestock.tb_mae_alert', alertIdNum);
+async function findAndValidateAlert(context: Context, alertIdNum: number): Promise<Record<string, any> | null> {
+  const alert = await db.findById('nubestock.tb_mae_alert', alertIdNum) as Record<string, any> | undefined;
   if (!alert) {
     context.res = {
       status: 404,

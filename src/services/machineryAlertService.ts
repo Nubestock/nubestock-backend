@@ -4,6 +4,97 @@ import { sendAlertNotification } from './notificationHubService';
 
 const db = Database.getInstance();
 
+type MaintenanceAlertType = 'MAINTENANCE_DUE' | 'MAINTENANCE_SOON';
+
+interface MaintenanceRecord {
+  mantainance_id: number;
+  maintenance_name: string;
+  maintenance_type: string;
+  last_mantainance_date: Date;
+  next_maintainance_value: number;
+  machinery_id: number;
+  machinery_name: string;
+  due_date: Date;
+}
+
+interface AlertConfig {
+  type: MaintenanceAlertType;
+  titlePrefix: string;
+  logLabel: string;
+}
+
+/**
+ * Crea alertas de mantenimiento para una lista de mantenimientos
+ */
+async function createMaintenanceAlerts(
+  maintenances: MaintenanceRecord[],
+  users: { id: number }[],
+  config: AlertConfig
+): Promise<number> {
+  let alertsCreated = 0;
+
+  for (const maintenance of maintenances) {
+    const existingAlert = await db.getConnection()
+      .select('*')
+      .from('nubestock.tb_ope_machinery_alert')
+      .where('id_mantainance', maintenance.mantainance_id)
+      .where('type', config.type)
+      .whereRaw('date >= ?', [new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)])
+      .first();
+
+    if (existingAlert) {
+      logger.info(`Alerta ${config.logLabel} ya existe para mantenimiento ${maintenance.mantainance_id}, omitiendo`);
+      continue;
+    }
+
+    const dueDate = maintenance.due_date ? new Date(maintenance.due_date) : new Date();
+    
+    let title: string;
+    let message: string;
+
+    if (config.type === 'MAINTENANCE_DUE') {
+      title = `${config.titlePrefix}: ${maintenance.maintenance_name}`;
+      message = `El mantenimiento "${maintenance.maintenance_name}" de la maquinaria "${maintenance.machinery_name}" estaba programado para ${dueDate.toLocaleDateString()} y ya ha vencido.`;
+    } else {
+      const daysUntilDue = Math.ceil((dueDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+      title = `${config.titlePrefix}: ${maintenance.maintenance_name}`;
+      message = `El mantenimiento "${maintenance.maintenance_name}" de la maquinaria "${maintenance.machinery_name}" está programado para ${dueDate.toLocaleDateString()} (en ${daysUntilDue} día(s)).`;
+    }
+
+    const [newAlert] = await db.getConnection()
+      .insert({
+        id_mantainance: maintenance.mantainance_id,
+        type: config.type,
+        date: dueDate,
+        title,
+        message,
+        is_sent: false,
+        creation_date: new Date(),
+      })
+      .into('nubestock.tb_ope_machinery_alert')
+      .returning('*');
+
+    if (users.length > 0) {
+      const alertUsers = users.map((user: any) => ({
+        id_machinery_alert: newAlert.id,
+        id_user: user.id,
+        is_read: false,
+        creation_date: new Date(),
+      }));
+
+      await db.getConnection()
+        .insert(alertUsers)
+        .into('nubestock.tb_ope_alert_user');
+
+      logger.info(`Alerta ${config.logLabel} ${newAlert.id} asignada a ${users.length} usuarios`);
+    }
+
+    alertsCreated++;
+  }
+
+  return alertsCreated;
+}
+
 /**
  * Detecta mantenimientos vencidos y próximos a vencer, generando alertas
  * Este método debe ejecutarse periódicamente (ej: cada 50 minutos)
@@ -14,7 +105,6 @@ export async function detectMaintenanceAlerts(daysBeforeDue: number = 1): Promis
   try {
     logger.info('Iniciando detección de alertas de mantenimiento', { daysBeforeDue });
 
-    // Obtener usuarios que deben recibir alertas (una sola vez para ambas detecciones)
     const users = await db.getConnection()
       .select('u.id')
       .from('nubestock.tb_mae_user as u')
@@ -30,8 +120,7 @@ export async function detectMaintenanceAlerts(daysBeforeDue: number = 1): Promis
       .groupBy('u.id')
       .distinct();
 
-    // ========== DETECCIÓN DE MANTENIMIENTOS VENCIDOS ==========
-    // Para mantenimientos periódicos: usa last_mantainance_date + next_maintainance_value
+    // Mantenimientos vencidos (due_date <= now)
     const overdueMaintenances = await db.getConnection()
       .select(
         'mt.id as mantainance_id',
@@ -48,74 +137,20 @@ export async function detectMaintenanceAlerts(daysBeforeDue: number = 1): Promis
       .from('nubestock.tb_mae_mantainance as mt')
       .leftJoin('nubestock.tb_mae_machinery as mc', 'mt.id_machinery', 'mc.id')
       .where('mt.is_active', true)
-      .whereNotNull('mt.next_maintainance_value') // Solo mantenimientos periódicos
+      .whereNotNull('mt.next_maintainance_value')
       .whereRaw(`
         (mt.last_mantainance_date + INTERVAL '1 day' * COALESCE(mt.next_maintainance_value, 0)) <= now()
       `);
 
     logger.info(`Se encontraron ${overdueMaintenances.length} mantenimientos vencidos`);
 
-    let overdueAlertsCreated = 0;
+    const overdueAlertsCreated = await createMaintenanceAlerts(overdueMaintenances, users, {
+      type: 'MAINTENANCE_DUE',
+      titlePrefix: 'Mantenimiento Vencido',
+      logLabel: 'de vencimiento',
+    });
 
-    for (const maintenance of overdueMaintenances) {
-      // Verificar si ya existe una alerta de vencimiento para este mantenimiento
-      const existingAlert = await db.getConnection()
-        .select('*')
-        .from('nubestock.tb_ope_machinery_alert')
-        .where('id_mantainance', maintenance.mantainance_id)
-        .where('type', 'MAINTENANCE_DUE')
-        .whereRaw('date >= ?', [new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)]) // Últimos 7 días
-        .first();
-
-      if (existingAlert) {
-        logger.info(`Alerta de vencimiento ya existe para mantenimiento ${maintenance.mantainance_id}, omitiendo`);
-        continue;
-      }
-
-      // Crear la alerta de vencimiento
-      const dueDate = maintenance.due_date
-        ? new Date(maintenance.due_date)
-        : new Date();
-
-      const title = `Mantenimiento Vencido: ${maintenance.maintenance_name}`;
-      const message = `El mantenimiento "${maintenance.maintenance_name}" de la maquinaria "${maintenance.machinery_name}" estaba programado para ${dueDate.toLocaleDateString()} y ya ha vencido.`;
-
-      const [newAlert] = await db.getConnection()
-        .insert({
-          id_mantainance: maintenance.mantainance_id,
-          type: 'MAINTENANCE_DUE',
-          date: dueDate,
-          title,
-          message,
-          is_sent: false,
-          creation_date: new Date(),
-        })
-        .into('nubestock.tb_ope_machinery_alert')
-        .returning('*');
-
-      // Asignar a usuarios
-      if (users.length > 0) {
-        const alertUsers = users.map((user: any) => ({
-          id_machinery_alert: newAlert.id,
-          id_user: user.id,
-          is_read: false,
-          creation_date: new Date(),
-        }));
-
-        await db.getConnection()
-          .insert(alertUsers)
-          .into('nubestock.tb_ope_alert_user');
-
-        logger.info(`Alerta de vencimiento ${newAlert.id} asignada a ${users.length} usuarios`);
-      }
-
-      overdueAlertsCreated++;
-    }
-
-    // ========== DETECCIÓN DE MANTENIMIENTOS PRÓXIMOS A VENCER ==========
-    // Para mantenimientos periódicos: alerta preventiva cuando estamos dentro de los N días antes del vencimiento
-    // Fecha de vencimiento = last_mantainance_date + next_maintainance_value días
-    // Alerta preventiva: si now() está entre (due_date - daysBeforeDue) y due_date, y aún no ha vencido
+    // Mantenimientos próximos a vencer (now < due_date <= now + daysBeforeDue)
     const upcomingMaintenances = await db.getConnection()
       .select(
         'mt.id as mantainance_id',
@@ -132,7 +167,7 @@ export async function detectMaintenanceAlerts(daysBeforeDue: number = 1): Promis
       .from('nubestock.tb_mae_mantainance as mt')
       .leftJoin('nubestock.tb_mae_machinery as mc', 'mt.id_machinery', 'mc.id')
       .where('mt.is_active', true)
-      .whereNotNull('mt.next_maintainance_value') // Solo mantenimientos periódicos
+      .whereNotNull('mt.next_maintainance_value')
       .whereRaw(`
         (mt.last_mantainance_date + INTERVAL '1 day' * COALESCE(mt.next_maintainance_value, 0)) > now()
         AND
@@ -141,66 +176,11 @@ export async function detectMaintenanceAlerts(daysBeforeDue: number = 1): Promis
 
     logger.info(`Se encontraron ${upcomingMaintenances.length} mantenimientos próximos a vencer (en ${daysBeforeDue} día(s))`);
 
-    let upcomingAlertsCreated = 0;
-
-    for (const maintenance of upcomingMaintenances) {
-      // Verificar si ya existe una alerta preventiva para este mantenimiento
-      const existingAlert = await db.getConnection()
-        .select('*')
-        .from('nubestock.tb_ope_machinery_alert')
-        .where('id_mantainance', maintenance.mantainance_id)
-        .where('type', 'MAINTENANCE_SOON')
-        .whereRaw('date >= ?', [new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)]) // Últimos 7 días
-        .first();
-
-      if (existingAlert) {
-        logger.info(`Alerta preventiva ya existe para mantenimiento ${maintenance.mantainance_id}, omitiendo`);
-        continue;
-      }
-
-      // Crear la alerta preventiva
-      const dueDate = maintenance.due_date
-        ? new Date(maintenance.due_date)
-        : new Date();
-
-      const daysUntilDue = Math.ceil(
-        (dueDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
-      );
-
-      const title = `Mantenimiento Próximo: ${maintenance.maintenance_name}`;
-      const message = `El mantenimiento "${maintenance.maintenance_name}" de la maquinaria "${maintenance.machinery_name}" está programado para ${dueDate.toLocaleDateString()} (en ${daysUntilDue} día(s)).`;
-
-      const [newAlert] = await db.getConnection()
-        .insert({
-          id_mantainance: maintenance.mantainance_id,
-          type: 'MAINTENANCE_SOON',
-          date: dueDate,
-          title,
-          message,
-          is_sent: false,
-          creation_date: new Date(),
-        })
-        .into('nubestock.tb_ope_machinery_alert')
-        .returning('*');
-
-      // Asignar a usuarios
-      if (users.length > 0) {
-        const alertUsers = users.map((user: any) => ({
-          id_machinery_alert: newAlert.id,
-          id_user: user.id,
-          is_read: false,
-          creation_date: new Date(),
-        }));
-
-        await db.getConnection()
-          .insert(alertUsers)
-          .into('nubestock.tb_ope_alert_user');
-
-        logger.info(`Alerta preventiva ${newAlert.id} asignada a ${users.length} usuarios`);
-      }
-
-      upcomingAlertsCreated++;
-    }
+    const upcomingAlertsCreated = await createMaintenanceAlerts(upcomingMaintenances, users, {
+      type: 'MAINTENANCE_SOON',
+      titlePrefix: 'Mantenimiento Próximo',
+      logLabel: 'preventiva',
+    });
 
     logger.info(`Detección de alertas completada. ${overdueAlertsCreated} alertas de vencimiento y ${upcomingAlertsCreated} alertas preventivas creadas`);
   } catch (error) {

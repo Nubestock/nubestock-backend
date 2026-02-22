@@ -826,9 +826,9 @@ export async function registerProductionMaterials(context: Context, req: HttpReq
         data: {
           production_pending_ids: result.production_pending_ids, // IDs de los registros en tb_ope_pending_transaction (uno por material)
           product_final: {
-            id: (product as any)?.id,
-            name: (product as any)?.name,
-            sku: (product as any)?.sku,
+            id: product?.id,
+            name: product?.name,
+            sku: product?.sku,
           },
           materials_consumed: result.materials.map((mt: any) => {
             const waste = mt.has_waste ? (mt.waste_quantity || 0) : 0;

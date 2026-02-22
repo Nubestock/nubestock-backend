@@ -20,7 +20,7 @@ function validateMachineryId(context: Context, machineryId: string): number | nu
  * Busca una maquinaria por ID y valida que exista
  * Retorna la maquinaria si existe, null si no existe (y establece respuesta 404)
  */
-async function findAndValidateMachinery(context: Context, machineryIdNum: number): Promise<any | null> {
+async function findAndValidateMachinery(context: Context, machineryIdNum: number): Promise<Record<string, any> | null> {
   const machinery = await db.getConnection()
     .select('*')
     .from('nubestock.tb_mae_machinery')

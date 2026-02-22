@@ -1,6 +1,6 @@
 import { Context, HttpRequest } from '../types/azure-functions';
 import { Database } from '../config/database';
-import { createErrorResponse, handleError, validateId } from '../utils/controllerHelpers';
+import { handleError, validateId } from '../utils/controllerHelpers';
 
 const db = Database.getInstance();
 

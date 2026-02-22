@@ -15,7 +15,7 @@ function validateOriginId(context: Context, originId: string): number | null {
   return validateId(context, originId, 'origen');
 }
 
-async function findAndValidateOrigin(context: Context, originIdNum: number): Promise<any | null> {
+async function findAndValidateOrigin(context: Context, originIdNum: number): Promise<Record<string, any> | null> {
   const origin = await db.findById('nubestock.tb_mae_origin', originIdNum);
   
   if (!origin) {
@@ -79,7 +79,7 @@ export async function listOrigins(context: Context, req: HttpRequest): Promise<v
         .where('o.id', originIdNum)
         .first();
 
-      if (!origin || !(origin as any).is_active) {
+      if (!origin || !origin.is_active) {
         context.res = {
           status: 404,
           body: {
