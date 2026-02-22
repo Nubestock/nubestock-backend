@@ -5,6 +5,314 @@ import Joi from 'joi';
 
 const db = Database.getInstance();
 
+interface ProductionFilters {
+  startDate?: string;
+  endDate?: string;
+  idUserNum: number | null;
+  idProductNum: number | null;
+  status?: string;
+}
+
+function buildPendingBaseQuery() {
+  return db.getConnection()
+    .from('nubestock.tb_ope_pending_transaction as pt')
+    .leftJoin('nubestock.tb_ope_product as p', 'pt.id_product', 'p.id')
+    .leftJoin('nubestock.tb_mae_category as c', 'p.id_category', 'c.id')
+    .leftJoin('nubestock.tb_ope_transaction as t_ref', 'pt.id_transaction', 't_ref.id')
+    .leftJoin('nubestock.tb_mae_user as u', 't_ref.id_user', 'u.id')
+    .where('pt.is_active', true)
+    .where('p.type', 'PF');
+}
+
+function buildCompletedBaseQuery() {
+  return db.getConnection()
+    .from('nubestock.tb_ope_transaction as t')
+    .leftJoin('nubestock.tb_mae_user as u', 't.id_user', 'u.id')
+    .leftJoin('nubestock.tb_ope_product as p', 't.id_product', 'p.id')
+    .leftJoin('nubestock.tb_mae_category as c', 'p.id_category', 'c.id')
+    .leftJoin('nubestock.tb_ope_pending_transaction as pt_active', function() {
+      this.on('p.id', '=', 'pt_active.id_product')
+        .andOn('pt_active.is_active', '=', db.getConnection().raw('true'));
+    })
+    .where('p.type', 'PF')
+    .where('t.type', 'PROD')
+    .where('t.direction', '+')
+    .whereNull('pt_active.id');
+}
+
+function buildDefaultBaseQuery() {
+  return db.getConnection()
+    .from('nubestock.tb_ope_transaction as t')
+    .leftJoin('nubestock.tb_mae_user as u', 't.id_user', 'u.id')
+    .leftJoin('nubestock.tb_ope_product as p', 't.id_product', 'p.id')
+    .leftJoin('nubestock.tb_mae_category as c', 'p.id_category', 'c.id')
+    .where('p.type', 'PF')
+    .where('t.type', 'PROD')
+    .where('t.direction', '+');
+}
+
+function applyPendingFilters(query: any, filters: ProductionFilters): any {
+  const { startDate, endDate, idProductNum, idUserNum } = filters;
+  if (startDate) query = query.where('pt.creation_date', '>=', startDate);
+  if (endDate) query = query.where('pt.creation_date', '<=', endDate);
+  if (idProductNum && !Number.isNaN(idProductNum)) query = query.where('pt.id_product', idProductNum);
+  if (idUserNum && !Number.isNaN(idUserNum)) query = query.where('t_ref.id_user', idUserNum);
+  return query;
+}
+
+function applyTransactionFilters(query: any, filters: ProductionFilters): any {
+  const { startDate, endDate, idProductNum, idUserNum } = filters;
+  if (startDate) query = query.where('t.creation_date', '>=', startDate);
+  if (endDate) query = query.where('t.creation_date', '<=', endDate);
+  if (idUserNum && !Number.isNaN(idUserNum)) query = query.where('t.id_user', idUserNum);
+  if (idProductNum && !Number.isNaN(idProductNum)) query = query.where('t.id_product', idProductNum);
+  return query;
+}
+
+function buildProductionBaseQuery(status: string | undefined, filters: ProductionFilters): any {
+  let baseQuery: any;
+  
+  if (status === 'pending') {
+    baseQuery = buildPendingBaseQuery();
+    baseQuery = applyPendingFilters(baseQuery, filters);
+  } else if (status === 'completed') {
+    baseQuery = buildCompletedBaseQuery();
+    baseQuery = applyTransactionFilters(baseQuery, filters);
+  } else {
+    baseQuery = buildDefaultBaseQuery();
+    baseQuery = applyTransactionFilters(baseQuery, filters);
+  }
+  
+  return baseQuery;
+}
+
+async function countProductions(
+  baseQuery: any,
+  status: string | undefined,
+  filters: ProductionFilters
+): Promise<{ total: number; totalPending: number; totalCompleted: number }> {
+  let total = 0;
+  let totalPending = 0;
+  let totalCompleted = 0;
+
+  if (status === 'pending') {
+    const countQuery = baseQuery.clone()
+      .clearSelect()
+      .clearOrder()
+      .clearGroup()
+      .countDistinct('pt.id_product as count');
+    const [{ count }] = await countQuery;
+    total = Number.parseInt(count as string);
+    totalPending = total;
+  } else if (status === 'completed') {
+    const [{ count }] = await baseQuery.clone().count('t.id as count');
+    total = Number.parseInt(count as string);
+    totalCompleted = total;
+  } else {
+    let pendingCountQuery = buildPendingBaseQuery();
+    pendingCountQuery = applyPendingFilters(pendingCountQuery, filters);
+    
+    const [{ count: pendingCount }] = await pendingCountQuery
+      .clearSelect()
+      .clearOrder()
+      .clearGroup()
+      .countDistinct('pt.id_product as count');
+    totalPending = Number.parseInt(pendingCount as string);
+    
+    const [{ count: completedCount }] = await baseQuery.clone().count('t.id as count');
+    totalCompleted = Number.parseInt(completedCount as string);
+    
+    total = totalPending + totalCompleted;
+  }
+
+  return { total, totalPending, totalCompleted };
+}
+
+function getPendingSelectFields() {
+  return [
+    'pt.id_product as id',
+    'pt.id_product',
+    db.getConnection().raw('(SELECT id_user FROM nubestock.tb_ope_transaction WHERE id = MIN(pt.id_transaction) LIMIT 1) as id_user'),
+    db.getConnection().raw('0 as quantity'),
+    db.getConnection().raw("'PROD' as type"),
+    db.getConnection().raw("'+' as direction"),
+    db.getConnection().raw('MIN(pt.creation_date) as creation_date'),
+    db.getConnection().raw('NULL as modification_date'),
+    db.getConnection().raw('NULL as details'),
+    db.getConnection().raw('(SELECT name FROM nubestock.tb_mae_user WHERE id = (SELECT id_user FROM nubestock.tb_ope_transaction WHERE id = MIN(pt.id_transaction) LIMIT 1)) as user_name'),
+    'p.name as product_name',
+    'p.sku',
+    'c.name as category_name',
+    db.getConnection().raw('true as is_pending'),
+    db.getConnection().raw('COUNT(DISTINCT pt.id) as pending_count')
+  ];
+}
+
+function getCompletedSelectFields() {
+  return [
+    't.id',
+    't.id_product',
+    't.id_user',
+    't.quantity',
+    't.type',
+    't.direction',
+    't.creation_date',
+    't.modification_date',
+    't.details',
+    'u.name as user_name',
+    'p.name as product_name',
+    'p.sku',
+    'c.name as category_name',
+    db.getConnection().raw('false as is_pending')
+  ];
+}
+
+async function fetchProductions(
+  baseQuery: any,
+  status: string | undefined,
+  filters: ProductionFilters,
+  offset: number,
+  limit: number
+): Promise<any[]> {
+  if (status === 'pending') {
+    return baseQuery
+      .select(...getPendingSelectFields())
+      .groupBy('pt.id_product', 'p.id', 'p.name', 'p.sku', 'c.id', 'c.name')
+      .orderBy('creation_date', 'desc')
+      .offset(offset)
+      .limit(limit);
+  }
+  
+  if (status === 'completed') {
+    return baseQuery
+      .select(...getCompletedSelectFields())
+      .orderBy('t.creation_date', 'desc')
+      .offset(offset)
+      .limit(limit);
+  }
+  
+  let pendingQuery = buildPendingBaseQuery();
+  pendingQuery = applyPendingFilters(pendingQuery, filters);
+  
+  const pendingProductions = await pendingQuery
+    .select(
+      'pt.id_product as id',
+      'pt.id_product',
+      't_ref.id_user as id_user',
+      db.getConnection().raw('0 as quantity'),
+      db.getConnection().raw("'PROD' as type"),
+      db.getConnection().raw("'+' as direction"),
+      db.getConnection().raw('MIN(pt.creation_date) as creation_date'),
+      db.getConnection().raw('NULL as modification_date'),
+      db.getConnection().raw('NULL as details'),
+      'u.name as user_name',
+      'p.name as product_name',
+      'p.sku',
+      'c.name as category_name',
+      db.getConnection().raw('true as is_pending'),
+      db.getConnection().raw('COUNT(DISTINCT pt.id) as pending_count')
+    )
+    .groupBy('pt.id_product', 'p.id', 'p.name', 'p.sku', 'c.id', 'c.name', 't_ref.id_user', 'u.name')
+    .orderBy('creation_date', 'desc');
+  
+  const completedProductions = await baseQuery
+    .select(...getCompletedSelectFields())
+    .orderBy('t.creation_date', 'desc');
+  
+  return [...pendingProductions, ...completedProductions]
+    .sort((a: any, b: any) => new Date(b.creation_date).getTime() - new Date(a.creation_date).getTime())
+    .slice(offset, offset + limit);
+}
+
+async function getMaterialTransactions(productId: number, isActive: boolean): Promise<any[]> {
+  const pendingRecords = await db.getConnection()
+    .select('id_transaction')
+    .from('nubestock.tb_ope_pending_transaction')
+    .where('id_product', productId)
+    .where('is_active', isActive);
+
+  if (pendingRecords.length === 0) return [];
+
+  const transactionIds = pendingRecords.map((pr: any) => pr.id_transaction);
+  
+  return db.getConnection()
+    .select(
+      't.*',
+      'p.name as material_name',
+      'p.sku as material_sku',
+      'p.quantity as current_stock'
+    )
+    .from('nubestock.tb_ope_transaction as t')
+    .leftJoin('nubestock.tb_ope_product as p', 't.id_product', 'p.id')
+    .whereIn('t.id', transactionIds)
+    .where('t.type', 'PROD')
+    .where('t.direction', '-')
+    .orderBy('t.creation_date', 'desc');
+}
+
+function processMaterialTransactions(materialTransactions: any[]): any[] {
+  const materialMap = new Map();
+  
+  materialTransactions.forEach((mt: any) => {
+    if (!materialMap.has(mt.id)) {
+      const waste = mt.has_waste ? Number.parseFloat(String(mt.waste_quantity || 0)) : 0;
+      const quantityUsed = Number.parseFloat(String(mt.quantity || 0));
+      
+      materialMap.set(mt.id, {
+        id_product: mt.id_product,
+        name: mt.material_name,
+        sku: mt.material_sku,
+        quantity_used: quantityUsed,
+        waste: waste,
+        effective_quantity: Number.parseFloat((quantityUsed - waste).toFixed(2)),
+        has_waste: mt.has_waste,
+        current_stock: mt.current_stock ? Number.parseFloat(String(mt.current_stock)) : null,
+        transaction_id: mt.id,
+        details: mt.details,
+      });
+    }
+  });
+  
+  return Array.from(materialMap.values());
+}
+
+function calculateMaterialTotals(materials: any[]): { totalConsumed: number; totalWaste: number } {
+  const totalConsumed = Number.parseFloat(
+    materials.reduce((sum: number, m: any) => sum + (Number.parseFloat(String(m.quantity_used)) || 0), 0).toFixed(2)
+  );
+  
+  const totalWaste = Number.parseFloat(
+    materials.reduce((sum: number, m: any) => sum + (Number.parseFloat(String(m.waste)) || 0), 0).toFixed(2)
+  );
+  
+  return { totalConsumed, totalWaste };
+}
+
+async function enrichProductionWithMaterials(prod: any): Promise<any> {
+  const prodStatus = prod.is_pending ? 'pending' : 'completed';
+  const isActive = prodStatus === 'pending';
+  
+  const materialTransactions = await getMaterialTransactions(prod.id_product, isActive);
+  const materials_consumed = processMaterialTransactions(materialTransactions);
+  const { totalConsumed: total_consumed, totalWaste: total_waste } = calculateMaterialTotals(materials_consumed);
+
+  const baseDetails = {
+    materials_consumed,
+    total_consumed,
+    total_waste,
+    registered_by: prod.id_user,
+    registered_at: prod.creation_date,
+  };
+
+  return {
+    ...prod,
+    status: prodStatus,
+    production_details: prodStatus === 'pending' 
+      ? baseDetails 
+      : { ...baseDetails, completed_at: prod.modification_date || prod.creation_date },
+  };
+}
+
 export async function getDailyProduction(context: Context, req: HttpRequest): Promise<void> {
   try {
     const page = Number.parseInt(req.query.page as string) || 1;
@@ -13,141 +321,14 @@ export async function getDailyProduction(context: Context, req: HttpRequest): Pr
     const endDate = req.query.endDate as string;
     const id_user = req.query.id_user as string;
     const id_product = req.query.id_product as string;
-    const status = req.query.status as string; // 'pending', 'completed', o ambos
+    const status = req.query.status as string;
     const idUserNum = id_user ? Number.parseInt(id_user, 10) : null;
     const idProductNum = id_product ? Number.parseInt(id_product, 10) : null;
 
-    // Crear query base para filtros usando tb_ope_pending_transaction para pendientes
-    // y tb_ope_transaction para completadas (producto final con direction='+')
-    // IMPORTANTE: Las producciones pendientes NO tienen transacción del producto final en tb_ope_transaction
-    // Solo existen en tb_ope_pending_transaction
-    
-    let baseQuery: any;
-    
-    if (status === 'pending') {
-      // Para pendientes: usar tb_ope_pending_transaction directamente
-      baseQuery = db.getConnection()
-        .from('nubestock.tb_ope_pending_transaction as pt')
-        .leftJoin('nubestock.tb_ope_product as p', 'pt.id_product', 'p.id')
-        .leftJoin('nubestock.tb_mae_category as c', 'p.id_category', 'c.id')
-        .leftJoin('nubestock.tb_ope_transaction as t_ref', 'pt.id_transaction', 't_ref.id')
-        .leftJoin('nubestock.tb_mae_user as u', 't_ref.id_user', 'u.id')
-        .where('pt.is_active', true)
-        .where('p.type', 'PF'); // Solo productos finales
-    } else if (status === 'completed') {
-      // Para completadas: usar tb_ope_transaction (producto final con direction='+')
-      // Una producción está completada si:
-      // 1. Tiene registros en tb_ope_pending_transaction con is_active=false (fue completada)
-      // 2. O no tiene ningún registro activo en tb_ope_pending_transaction
-      baseQuery = db.getConnection()
-        .from('nubestock.tb_ope_transaction as t')
-        .leftJoin('nubestock.tb_mae_user as u', 't.id_user', 'u.id')
-        .leftJoin('nubestock.tb_ope_product as p', 't.id_product', 'p.id')
-        .leftJoin('nubestock.tb_mae_category as c', 'p.id_category', 'c.id')
-        .leftJoin('nubestock.tb_ope_pending_transaction as pt_active', function() {
-          this.on('p.id', '=', 'pt_active.id_product')
-            .andOn('pt_active.is_active', '=', db.getConnection().raw('true'));
-        })
-        .where('p.type', 'PF')
-        .where('t.type', 'PROD')
-        .where('t.direction', '+')
-        .whereNull('pt_active.id'); // NO tiene registro ACTIVO en pending_transaction (puede tener inactivos)
-    } else {
-      // Sin filtro de status: mostrar ambas (pendientes y completadas)
-      // Usaremos una estrategia de dos consultas separadas y luego las combinaremos
-      // Por ahora, usamos la query de completadas como base, pero luego agregaremos pendientes
-      baseQuery = db.getConnection()
-        .from('nubestock.tb_ope_transaction as t')
-        .leftJoin('nubestock.tb_mae_user as u', 't.id_user', 'u.id')
-        .leftJoin('nubestock.tb_ope_product as p', 't.id_product', 'p.id')
-        .leftJoin('nubestock.tb_mae_category as c', 'p.id_category', 'c.id')
-        .where('p.type', 'PF')
-        .where('t.type', 'PROD')
-        .where('t.direction', '+');
-    }
+    const filters: ProductionFilters = { startDate, endDate, idUserNum, idProductNum, status };
+    const baseQuery = buildProductionBaseQuery(status, filters);
 
-    // Aplicar filtros adicionales
-    if (status === 'pending') {
-      // Para pendientes, los filtros se aplican a pt (pending_transaction)
-      if (startDate) {
-        baseQuery = baseQuery.where('pt.creation_date', '>=', startDate);
-      }
-      if (endDate) {
-        baseQuery = baseQuery.where('pt.creation_date', '<=', endDate);
-      }
-      if (idProductNum && !Number.isNaN(idProductNum)) {
-        baseQuery = baseQuery.where('pt.id_product', idProductNum);
-      }
-      // Para id_user, usar t_ref (transacción de referencia)
-      if (idUserNum && !Number.isNaN(idUserNum)) {
-        baseQuery = baseQuery.where('t_ref.id_user', idUserNum);
-      }
-    } else {
-      // Para completadas o sin filtro, los filtros se aplican a t (transaction)
-      if (startDate) {
-        baseQuery = baseQuery.where('t.creation_date', '>=', startDate);
-      }
-      if (endDate) {
-        baseQuery = baseQuery.where('t.creation_date', '<=', endDate);
-      }
-      if (idUserNum && !Number.isNaN(idUserNum)) {
-        baseQuery = baseQuery.where('t.id_user', idUserNum);
-      }
-      if (idProductNum && !Number.isNaN(idProductNum)) {
-        baseQuery = baseQuery.where('t.id_product', idProductNum);
-      }
-    }
-
-    // Contar total (usando la query base sin select)
-    let total: number;
-    let totalPending: number = 0;
-    let totalCompleted: number = 0;
-    
-    if (status === 'pending') {
-      // Para pendientes, contar productos únicos (agrupados por id_product)
-      const countQuery = baseQuery.clone()
-        .clearSelect()
-        .clearOrder()
-        .clearGroup()
-        .countDistinct('pt.id_product as count');
-      const [{ count }] = await countQuery;
-      total = Number.parseInt(count as string);
-      totalPending = total;
-    } else if (status === 'completed') {
-      const [{ count }] = await baseQuery.clone().count('t.id as count');
-      total = Number.parseInt(count as string);
-      totalCompleted = total;
-    } else {
-      // Sin filtro: contar ambas
-      const pendingCountQuery = db.getConnection()
-        .from('nubestock.tb_ope_pending_transaction as pt')
-        .leftJoin('nubestock.tb_ope_product as p', 'pt.id_product', 'p.id')
-        .where('pt.is_active', true)
-        .where('p.type', 'PF');
-      
-      // Aplicar filtros a la query de pendientes
-      if (startDate) {
-        pendingCountQuery.where('pt.creation_date', '>=', startDate);
-      }
-      if (endDate) {
-        pendingCountQuery.where('pt.creation_date', '<=', endDate);
-      }
-      if (idProductNum && !Number.isNaN(idProductNum)) {
-        pendingCountQuery.where('pt.id_product', idProductNum);
-      }
-      
-      const [{ count: pendingCount }] = await pendingCountQuery
-        .clearSelect()
-        .clearOrder()
-        .clearGroup()
-        .countDistinct('pt.id_product as count');
-      totalPending = Number.parseInt(pendingCount as string);
-      
-      const [{ count: completedCount }] = await baseQuery.clone().count('t.id as count');
-      totalCompleted = Number.parseInt(completedCount as string);
-      
-      total = totalPending + totalCompleted;
-    }
+    const { total, totalPending, totalCompleted } = await countProductions(baseQuery, status, filters);
 
     logger.info('Production query results:', {
       total,
@@ -156,133 +337,8 @@ export async function getDailyProduction(context: Context, req: HttpRequest): Pr
       limit,
     });
 
-    // Obtener datos con select y paginación
     const offset = (page - 1) * limit;
-    let productions: any[] = [];
-    
-    if (status === 'pending') {
-      // Para pendientes: obtener desde pending_transaction agrupado por producto final
-      // Agrupamos por id_product para mostrar una producción pendiente por producto final
-      productions = await baseQuery
-        .select(
-          'pt.id_product as id', // Usar id_product como identificador (es el ID del producto final)
-          'pt.id_product',
-          db.getConnection().raw('(SELECT id_user FROM nubestock.tb_ope_transaction WHERE id = MIN(pt.id_transaction) LIMIT 1) as id_user'),
-          db.getConnection().raw('0 as quantity'), // Pendiente, aún no tiene cantidad
-          db.getConnection().raw("'PROD' as type"),
-          db.getConnection().raw("'+' as direction"),
-          db.getConnection().raw('MIN(pt.creation_date) as creation_date'), // Fecha más antigua
-          db.getConnection().raw('NULL as modification_date'),
-          db.getConnection().raw('NULL as details'),
-          db.getConnection().raw('(SELECT name FROM nubestock.tb_mae_user WHERE id = (SELECT id_user FROM nubestock.tb_ope_transaction WHERE id = MIN(pt.id_transaction) LIMIT 1)) as user_name'),
-          'p.name as product_name',
-          'p.sku',
-          'c.name as category_name',
-          db.getConnection().raw('true as is_pending'),
-          db.getConnection().raw('COUNT(DISTINCT pt.id) as pending_count') // Cantidad de registros pendientes para este producto
-        )
-        .groupBy('pt.id_product', 'p.id', 'p.name', 'p.sku', 'c.id', 'c.name')
-        .orderBy('creation_date', 'desc')
-        .offset(offset)
-        .limit(limit);
-    } else if (status === 'completed') {
-      // Para completadas: obtener desde transaction
-      productions = await baseQuery
-        .select(
-          't.id',
-          't.id_product',
-          't.id_user',
-          't.quantity',
-          't.type',
-          't.direction',
-          't.creation_date',
-          't.modification_date',
-          't.details',
-          'u.name as user_name',
-          'p.name as product_name',
-          'p.sku',
-          'c.name as category_name',
-          db.getConnection().raw('false as is_pending')
-        )
-        .orderBy('t.creation_date', 'desc')
-        .offset(offset)
-        .limit(limit);
-    } else {
-      // Sin filtro: obtener ambas (pendientes y completadas)
-      // Primero obtenemos pendientes
-      const pendingQuery = db.getConnection()
-        .from('nubestock.tb_ope_pending_transaction as pt')
-        .leftJoin('nubestock.tb_ope_product as p', 'pt.id_product', 'p.id')
-        .leftJoin('nubestock.tb_mae_category as c', 'p.id_category', 'c.id')
-        .leftJoin('nubestock.tb_ope_transaction as t_ref', 'pt.id_transaction', 't_ref.id')
-        .leftJoin('nubestock.tb_mae_user as u', 't_ref.id_user', 'u.id')
-        .where('pt.is_active', true)
-        .where('p.type', 'PF');
-      
-      // Aplicar filtros a pendientes
-      if (startDate) {
-        pendingQuery.where('pt.creation_date', '>=', startDate);
-      }
-      if (endDate) {
-        pendingQuery.where('pt.creation_date', '<=', endDate);
-      }
-      if (idProductNum && !Number.isNaN(idProductNum)) {
-        pendingQuery.where('pt.id_product', idProductNum);
-      }
-      if (idUserNum && !Number.isNaN(idUserNum)) {
-        pendingQuery.where('t_ref.id_user', idUserNum);
-      }
-      
-      const pendingProductions = await pendingQuery
-        .select(
-          'pt.id_product as id',
-          'pt.id_product',
-          't_ref.id_user as id_user',
-          db.getConnection().raw('0 as quantity'),
-          db.getConnection().raw("'PROD' as type"),
-          db.getConnection().raw("'+' as direction"),
-          db.getConnection().raw('MIN(pt.creation_date) as creation_date'),
-          db.getConnection().raw('NULL as modification_date'),
-          db.getConnection().raw('NULL as details'),
-          'u.name as user_name',
-          'p.name as product_name',
-          'p.sku',
-          'c.name as category_name',
-          db.getConnection().raw('true as is_pending'),
-          db.getConnection().raw('COUNT(DISTINCT pt.id) as pending_count')
-        )
-        .groupBy('pt.id_product', 'p.id', 'p.name', 'p.sku', 'c.id', 'c.name', 't_ref.id_user', 'u.name')
-        .orderBy('creation_date', 'desc');
-      
-      // Luego obtenemos completadas
-      const completedProductions = await baseQuery
-        .select(
-          't.id',
-          't.id_product',
-          't.id_user',
-          't.quantity',
-          't.type',
-          't.direction',
-          't.creation_date',
-          't.modification_date',
-          't.details',
-          'u.name as user_name',
-          'p.name as product_name',
-          'p.sku',
-          'c.name as category_name',
-          db.getConnection().raw('false as is_pending')
-        )
-        .orderBy('t.creation_date', 'desc');
-      
-      // Combinar ambas listas y ordenar por fecha (más recientes primero)
-      productions = [...pendingProductions, ...completedProductions]
-        .sort((a: any, b: any) => {
-          const dateA = new Date(a.creation_date).getTime();
-          const dateB = new Date(b.creation_date).getTime();
-          return dateB - dateA;
-        })
-        .slice(offset, offset + limit);
-    }
+    const productions = await fetchProductions(baseQuery, status, filters, offset, limit);
 
     logger.info('Productions found:', {
       count: productions.length,
@@ -290,128 +346,7 @@ export async function getDailyProduction(context: Context, req: HttpRequest): Pr
       pending_count: productions.filter((p: any) => p.is_pending).length,
     });
 
-    // Enriquecer con información de materiales consumidos y estado
-    const enrichedProductions = await Promise.all(productions.map(async (prod: any) => {
-      // Estado se determina por si tiene registro activo en tb_ope_pending_transaction
-      const status = prod.is_pending ? 'pending' : 'completed';
-
-      // Obtener materiales consumidos desde transacciones PROD relacionadas
-      let materialTransactions: any[] = [];
-      
-      if (status === 'pending') {
-        // Para pendientes: obtener materiales desde los pending_transaction relacionados con este producto final
-        // prod.id_product es el ID del producto final
-        const pendingRecords = await db.getConnection()
-          .select('id_transaction')
-          .from('nubestock.tb_ope_pending_transaction')
-          .where('id_product', prod.id_product) // Buscar por producto final
-          .where('is_active', true);
-
-        if (pendingRecords.length > 0) {
-          const materialTransactionIds = pendingRecords.map((pr: any) => pr.id_transaction);
-          
-          // Buscar transacciones PROD de materiales relacionadas con este producto final
-          materialTransactions = await db.getConnection()
-            .select(
-              't.*',
-              'p.name as material_name',
-              'p.sku as material_sku',
-              'p.quantity as current_stock'
-            )
-            .from('nubestock.tb_ope_transaction as t')
-            .leftJoin('nubestock.tb_ope_product as p', 't.id_product', 'p.id')
-            .whereIn('t.id', materialTransactionIds) // Solo las transacciones relacionadas
-            .where('t.type', 'PROD') // Transacciones de producción
-            .where('t.direction', '-') // Materiales consumidos
-            .orderBy('t.creation_date', 'desc');
-        }
-      } else {
-        // Para completadas: obtener materiales desde los pending_transaction completados (is_active=false)
-        // que están relacionados con este producto final
-        // Buscar los pending_transaction que fueron completados para este producto final
-        const pendingRecords = await db.getConnection()
-          .select('id_transaction')
-          .from('nubestock.tb_ope_pending_transaction')
-          .where('id_product', prod.id_product) // Buscar por producto final
-          .where('is_active', false); // Solo los completados
-
-        if (pendingRecords.length > 0) {
-          const materialTransactionIds = pendingRecords.map((pr: any) => pr.id_transaction);
-          
-          // Buscar transacciones PROD de materiales relacionadas con este producto final
-          materialTransactions = await db.getConnection()
-            .select(
-              't.*',
-              'p.name as material_name',
-              'p.sku as material_sku',
-              'p.quantity as current_stock'
-            )
-            .from('nubestock.tb_ope_transaction as t')
-            .leftJoin('nubestock.tb_ope_product as p', 't.id_product', 'p.id')
-            .whereIn('t.id', materialTransactionIds) // Solo las transacciones relacionadas
-            .where('t.type', 'PROD') // Transacciones de producción
-            .where('t.direction', '-') // Materiales consumidos
-            .orderBy('t.creation_date', 'desc');
-        }
-      }
-
-      // Convertir a Map para eliminar duplicados por transaction_id
-      // Esto previene materiales duplicados si hay múltiples registros en pending_transaction
-      const materialMap = new Map();
-      materialTransactions.forEach((mt: any) => {
-        // Usar transaction_id como clave única para evitar duplicados
-        if (!materialMap.has(mt.id)) {
-          // Asegurar conversión a número para evitar concatenación de strings
-          const waste = mt.has_waste ? Number.parseFloat(String(mt.waste_quantity || 0)) : 0;
-          const quantityUsed = Number.parseFloat(String(mt.quantity || 0));
-          
-          materialMap.set(mt.id, {
-            id_product: mt.id_product,
-            name: mt.material_name,
-            sku: mt.material_sku,
-            quantity_used: quantityUsed,
-            waste: waste,
-            effective_quantity: Number.parseFloat((quantityUsed - waste).toFixed(2)),
-            has_waste: mt.has_waste,
-            current_stock: mt.current_stock ? Number.parseFloat(String(mt.current_stock)) : null,
-            transaction_id: mt.id,
-            details: mt.details, // Imagen en base64 si existe
-          });
-        }
-      });
-
-      const materials_consumed = Array.from(materialMap.values());
-
-      // Asegurar que los valores sean números antes de sumar (evitar concatenación de strings)
-      const total_consumed = Number.parseFloat(materials_consumed.reduce((sum: number, m: any) => {
-        const qty = Number.parseFloat(String(m.quantity_used)) || 0;
-        return sum + qty;
-      }, 0).toFixed(2));
-      
-      const total_waste = Number.parseFloat(materials_consumed.reduce((sum: number, m: any) => {
-        const waste = Number.parseFloat(String(m.waste)) || 0;
-        return sum + waste;
-      }, 0).toFixed(2));
-
-      return {
-        ...prod,
-        status,
-        production_details: status === 'pending' ? {
-          materials_consumed,
-          total_consumed,
-          total_waste,
-          registered_by: prod.id_user,
-          registered_at: prod.creation_date,
-        } : {
-          materials_consumed,
-          total_consumed,
-          total_waste,
-          registered_by: prod.id_user,
-          registered_at: prod.creation_date,
-          completed_at: prod.modification_date || prod.creation_date,
-        },
-      };
-    }));
+    const enrichedProductions = await Promise.all(productions.map(enrichProductionWithMaterials));
 
     // Contar producciones por estado en los resultados
     const pendingInResults = enrichedProductions.filter((p: any) => p.status === 'pending').length;

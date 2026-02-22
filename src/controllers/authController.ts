@@ -253,73 +253,121 @@ export async function changePassword(context: Context, req: HttpRequest): Promis
   }
 }
 
+/**
+ * Maneja la solicitud de reset de contraseña (POST)
+ */
+async function handlePasswordResetRequest(context: Context, req: HttpRequest): Promise<void> {
+  const { email } = req.body;
+  
+  if (!email) {
+    context.res = {
+      status: 400,
+      body: {
+        success: false,
+        message: 'Email requerido',
+        timestamp: new Date().toISOString(),
+      },
+    };
+    return;
+  }
+
+  await authService.requestPasswordReset(email);
+  
+  context.res = {
+    status: 200,
+    body: {
+      success: true,
+      message: 'Si el email existe, se enviará un enlace de restablecimiento',
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
+
+/**
+ * Maneja el restablecimiento de contraseña con token (PUT)
+ */
+async function handlePasswordResetWithToken(context: Context, req: HttpRequest): Promise<void> {
+  const resetPasswordSchema = Joi.object({
+    token: Joi.string().required(),
+    newPassword: Joi.string().min(8).max(100).required(),
+  });
+
+  const { error, value } = resetPasswordSchema.validate(req.body);
+  
+  if (error) {
+    context.res = {
+      status: 400,
+      body: {
+        success: false,
+        message: 'Datos de entrada inválidos',
+        errors: error.details.map(detail => ({
+          field: detail.path.join('.'),
+          message: detail.message,
+        })),
+        timestamp: new Date().toISOString(),
+      },
+    };
+    return;
+  }
+
+  const { token, newPassword } = value;
+  await authService.resetPassword(token, newPassword);
+  
+  context.res = {
+    status: 200,
+    body: {
+      success: true,
+      message: 'Contraseña restablecida exitosamente',
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
+
+/**
+ * Maneja errores específicos del reset de contraseña
+ */
+function handleResetPasswordError(context: Context, error: any): void {
+  logger.error('Error en reset de contraseña:', error);
+  
+  const knownErrors: Record<string, string> = {
+    'Token de restablecimiento inválido o ya utilizado': 'Token de restablecimiento inválido o ya utilizado',
+    'Token de restablecimiento expirado': 'Token de restablecimiento expirado. Por favor, solicite un nuevo restablecimiento',
+    'La contraseña debe tener al menos 8 caracteres': 'La contraseña debe tener al menos 8 caracteres',
+  };
+
+  const errorMessage = error.message || '';
+  const knownMessage = knownErrors[errorMessage];
+
+  if (knownMessage) {
+    context.res = {
+      status: 400,
+      body: {
+        success: false,
+        message: knownMessage,
+        timestamp: new Date().toISOString(),
+      },
+    };
+    return;
+  }
+
+  context.res = {
+    status: errorMessage.includes('Token') ? 400 : 500,
+    body: {
+      success: false,
+      message: errorMessage || 'Error al procesar restablecimiento de contraseña',
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
+
 export async function resetPassword(context: Context, req: HttpRequest): Promise<void> {
   try {
     const method = req.method;
 
     if (method === 'POST') {
-      // Solicitar reset de contraseña (generar token y enviar email)
-      const { email } = req.body;
-      
-      if (!email) {
-        context.res = {
-          status: 400,
-          body: {
-            success: false,
-            message: 'Email requerido',
-            timestamp: new Date().toISOString(),
-          },
-        };
-        return;
-      }
-
-      await authService.requestPasswordReset(email);
-      
-      context.res = {
-        status: 200,
-        body: {
-          success: true,
-          message: 'Si el email existe, se enviará un enlace de restablecimiento',
-          timestamp: new Date().toISOString(),
-        },
-      };
+      await handlePasswordResetRequest(context, req);
     } else if (method === 'PUT') {
-      // Restablecer contraseña con token
-      const resetPasswordSchema = Joi.object({
-        token: Joi.string().required(),
-        newPassword: Joi.string().min(8).max(100).required(),
-      });
-
-      const { error, value } = resetPasswordSchema.validate(req.body);
-      
-      if (error) {
-        context.res = {
-          status: 400,
-          body: {
-            success: false,
-            message: 'Datos de entrada inválidos',
-            errors: error.details.map(detail => ({
-              field: detail.path.join('.'),
-              message: detail.message,
-            })),
-            timestamp: new Date().toISOString(),
-          },
-        };
-        return;
-      }
-
-      const { token, newPassword } = value;
-
-      await authService.resetPassword(token, newPassword);
-      
-      context.res = {
-        status: 200,
-        body: {
-          success: true,
-          message: 'Contraseña restablecida exitosamente',
-          timestamp: new Date().toISOString(),
-        },
-      };
+      await handlePasswordResetWithToken(context, req);
     } else {
       context.res = {
         status: 405,
@@ -331,53 +379,7 @@ export async function resetPassword(context: Context, req: HttpRequest): Promise
       };
     }
   } catch (error: any) {
-    logger.error('Error en reset de contraseña:', error);
-    
-    // Manejar errores específicos
-    if (error.message === 'Token de restablecimiento inválido o ya utilizado') {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'Token de restablecimiento inválido o ya utilizado',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
-
-    if (error.message === 'Token de restablecimiento expirado') {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: 'Token de restablecimiento expirado. Por favor, solicite un nuevo restablecimiento',
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
-
-    if (error.message === 'La contraseña debe tener al menos 8 caracteres') {
-      context.res = {
-        status: 400,
-        body: {
-          success: false,
-          message: error.message,
-          timestamp: new Date().toISOString(),
-        },
-      };
-      return;
-    }
-
-    context.res = {
-      status: error.message && error.message.includes('Token') ? 400 : 500,
-      body: {
-        success: false,
-        message: error.message || 'Error al procesar restablecimiento de contraseña',
-        timestamp: new Date().toISOString(),
-      },
-    };
+    handleResetPasswordError(context, error);
   }
 }
 

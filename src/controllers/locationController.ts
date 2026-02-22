@@ -124,13 +124,79 @@ export async function listCities(context: Context, req: HttpRequest): Promise<vo
   }
 }
 
+function applyLocationFilters(query: any, filters: { id_country?: string; id_province?: string; id_city?: string }): any {
+  const { id_country, id_province, id_city } = filters;
+  
+  if (id_country) {
+    const idCountryNum = Number.parseInt(id_country, 10);
+    if (!Number.isNaN(idCountryNum)) query = query.where('c.id', idCountryNum);
+  }
+  if (id_province) {
+    const idProvinceNum = Number.parseInt(id_province, 10);
+    if (!Number.isNaN(idProvinceNum)) query = query.where('p.id', idProvinceNum);
+  }
+  if (id_city) {
+    const idCityNum = Number.parseInt(id_city, 10);
+    if (!Number.isNaN(idCityNum)) query = query.where('ci.id', idCityNum);
+  }
+  
+  return query;
+}
+
+function buildLocationHierarchy(locations: any[]): CountryNode[] {
+  const countriesMap = new Map<number, {
+    id: number;
+    name: string;
+    is_code: string;
+    provinces: Map<number, ProvinceNode>;
+  }>();
+
+  for (const location of locations) {
+    const countryId = location.id_country;
+    if (!countryId) continue;
+    
+    if (!countriesMap.has(countryId)) {
+      countriesMap.set(countryId, {
+        id: countryId,
+        name: location.country_name,
+        is_code: location.country_code,
+        provinces: new Map<number, ProvinceNode>()
+      });
+    }
+
+    const country = countriesMap.get(countryId)!;
+    const provinceId = location.id_province;
+    if (!provinceId) continue;
+
+    if (!country.provinces.has(provinceId)) {
+      country.provinces.set(provinceId, {
+        id: provinceId,
+        name: location.province_name,
+        is_code: location.province_code,
+        cities: []
+      });
+    }
+
+    const province = country.provinces.get(provinceId)!;
+    if (location.id_city) {
+      province.cities.push({
+        id: location.id_city,
+        name: location.city_name,
+        is_code: location.city_code
+      });
+    }
+  }
+
+  return Array.from(countriesMap.values()).map(country => ({
+    id: country.id,
+    name: country.name,
+    is_code: country.is_code,
+    provinces: Array.from(country.provinces.values())
+  }));
+}
+
 export async function getCompleteLocations(context: Context, req: HttpRequest): Promise<void> {
   try {
-    const id_country = req.query.id_country as string;
-    const id_province = req.query.id_province as string;
-    const id_city = req.query.id_city as string;
-
-    // Obtener todos los datos directamente de las tablas con joins
     let query = db.getConnection()
       .select(
         'c.id as id_country',
@@ -152,89 +218,18 @@ export async function getCompleteLocations(context: Context, req: HttpRequest): 
       .where('ci.is_active', true)
       .orWhereNull('ci.is_active');
 
-    // Aplicar filtros opcionales
-    if (id_country) {
-      const idCountryNum = typeof id_country === 'string' ? Number.parseInt(id_country, 10) : id_country;
-      if (!Number.isNaN(idCountryNum)) {
-        query = query.where('c.id', idCountryNum);
-      }
-    }
-    if (id_province) {
-      const idProvinceNum = typeof id_province === 'string' ? Number.parseInt(id_province, 10) : id_province;
-      if (!Number.isNaN(idProvinceNum)) {
-        query = query.where('p.id', idProvinceNum);
-      }
-    }
-    if (id_city) {
-      const idCityNum = typeof id_city === 'string' ? Number.parseInt(id_city, 10) : id_city;
-      if (!Number.isNaN(idCityNum)) {
-        query = query.where('ci.id', idCityNum);
-      }
-    }
+    query = applyLocationFilters(query, {
+      id_country: req.query.id_country as string,
+      id_province: req.query.id_province as string,
+      id_city: req.query.id_city as string,
+    });
 
     const locations = await query
       .orderBy('country_name', 'asc')
       .orderBy('province_name', 'asc')
       .orderBy('city_name', 'asc');
 
-    // Estructurar los datos de forma jerárquica
-    const countriesMap = new Map<number, {
-      id: number;
-      name: string;
-      is_code: string;
-      provinces: Map<number, ProvinceNode>;
-    }>();
-
-    locations.forEach((location: any) => {
-      const countryId = location.id_country;
-      
-      // Si el país no existe en el mapa, crearlo
-      if (countryId && !countriesMap.has(countryId)) {
-        countriesMap.set(countryId, {
-          id: countryId,
-          name: location.country_name,
-          is_code: location.country_code,
-          provinces: new Map<number, ProvinceNode>()
-        });
-      }
-
-      if (!countryId) return;
-
-      const country = countriesMap.get(countryId)!;
-      const provinceId = location.id_province;
-
-      // Si la provincia no existe en el país, crearla
-      if (provinceId && !country.provinces.has(provinceId)) {
-        country.provinces.set(provinceId, {
-          id: provinceId,
-          name: location.province_name,
-          is_code: location.province_code,
-          cities: []
-        });
-      }
-
-      if (!provinceId) return;
-
-      const province = country.provinces.get(provinceId)!;
-      const cityId = location.id_city;
-
-      // Agregar la ciudad a la provincia (solo si existe)
-      if (cityId) {
-        province.cities.push({
-          id: cityId,
-          name: location.city_name,
-          is_code: location.city_code
-        });
-      }
-    });
-
-    // Convertir Maps a Arrays
-    const countries: CountryNode[] = Array.from(countriesMap.values()).map(country => ({
-      id: country.id,
-      name: country.name,
-      is_code: country.is_code,
-      provinces: Array.from(country.provinces.values())
-    }));
+    const countries = buildLocationHierarchy(locations);
 
     context.res = {
       status: 200,

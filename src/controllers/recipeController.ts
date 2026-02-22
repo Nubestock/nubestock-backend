@@ -6,6 +6,90 @@ import { validateSchema, createErrorResponse, handleError, validateIdRequired, v
 
 const db = Database.getInstance();
 
+interface RecipeResults {
+  added: any[];
+  removed: any[];
+  errors: any[];
+}
+
+async function getOrCreateRecipe(trx: any, existingRecipe: any, productId: number, now: Date): Promise<number> {
+  if (existingRecipe) return existingRecipe.id;
+  
+  const [newRecipe] = await trx('nubestock.tb_mae_receipe')
+    .insert({
+      id_product: productId,
+      is_active: true,
+      creation_date: now,
+    })
+    .returning('id');
+  return newRecipe.id;
+}
+
+async function addNewMaterials(
+  trx: any,
+  materials: any[],
+  existingMaterialMap: Map<number, any>,
+  receipeId: number,
+  now: Date,
+  results: RecipeResults
+): Promise<void> {
+  for (const material of materials) {
+    if (existingMaterialMap.has(material.id_product)) continue;
+    
+    try {
+      const [newProductReceipe] = await trx('nubestock.tb_mae_product_receipe')
+        .insert({
+          id_receipe: receipeId,
+          id_product: material.id_product,
+          is_active: true,
+          creation_date: now,
+        })
+        .returning('*');
+      
+      if (newProductReceipe) {
+        results.added.push({ id: newProductReceipe.id, id_product: material.id_product });
+      }
+    } catch (error) {
+      logger.error(`Error al agregar material ${material.id_product}:`, error);
+      results.errors.push({
+        id_product: material.id_product,
+        operation: 'add',
+        error: error instanceof Error ? error.message : 'Error desconocido',
+      });
+    }
+  }
+}
+
+async function removeOldMaterials(
+  trx: any,
+  existingRelations: any[],
+  materialsToKeep: Set<number>,
+  now: Date,
+  results: RecipeResults
+): Promise<void> {
+  for (const relation of existingRelations) {
+    if (materialsToKeep.has(relation.id_product)) continue;
+    
+    try {
+      const removed = await trx('nubestock.tb_mae_product_receipe')
+        .where('id', relation.id)
+        .update({ is_active: false, modification_date: now })
+        .returning('*');
+      
+      if (removed?.length > 0) {
+        results.removed.push({ id: relation.id, id_product: relation.id_product });
+      }
+    } catch (error) {
+      logger.error(`Error al quitar material ${relation.id_product}:`, error);
+      results.errors.push({
+        id_product: relation.id_product,
+        operation: 'remove',
+        error: error instanceof Error ? error.message : 'Error desconocido',
+      });
+    }
+  }
+}
+
 // Helper functions specific to recipes
 
 function validateRecipeIdRequired(context: Context, recipeId: string | undefined): string | null {
@@ -363,24 +447,9 @@ export async function updateProductRecipe(context: Context, req: HttpRequest): P
       errors: [] as any[],
     };
 
-    // Procesar en transacción
     await db.transaction(async (trx) => {
-      // Obtener o crear receta
-      if (!receipe) {
-        // Crear nueva receta
-        const [newReceipe] = await trx('nubestock.tb_mae_receipe')
-          .insert({
-            id_product,
-            is_active: true,
-            creation_date: now,
-          })
-          .returning('id');
-        receipeId = newReceipe.id;
-      } else {
-        receipeId = receipe.id;
-      }
-
-      // Obtener relaciones receta-material actuales (solo activas)
+      receipeId = await getOrCreateRecipe(trx, receipe, id_product, now);
+      
       const existingProductReceipes = await trx('nubestock.tb_mae_product_receipe')
         .select('id', 'id_product')
         .where('id_receipe', receipeId)
@@ -390,70 +459,8 @@ export async function updateProductRecipe(context: Context, req: HttpRequest): P
         existingProductReceipes.map((pr: any) => [pr.id_product, pr])
       );
 
-      const materialsToProcess = new Set(materialIds);
-      
-      // 1. Agregar materiales nuevos (no existe quantity, solo relación)
-      for (const material of materials) {
-        const existingRelation = existingMaterialMap.get(material.id_product);
-        
-        if (!existingRelation) {
-          // Material nuevo: agregar relación
-          try {
-            const [newProductReceipe] = await trx('nubestock.tb_mae_product_receipe')
-              .insert({
-                id_receipe: receipeId,
-                id_product: material.id_product,
-                is_active: true,
-                creation_date: now,
-              })
-              .returning('*');
-            
-            if (newProductReceipe) {
-              results.added.push({
-                id: newProductReceipe.id,
-                id_product: material.id_product,
-              });
-            }
-          } catch (error) {
-            logger.error(`Error al agregar material ${material.id_product}:`, error);
-            results.errors.push({
-              id_product: material.id_product,
-              operation: 'add',
-              error: error instanceof Error ? error.message : 'Error desconocido',
-            });
-          }
-        }
-        // Si existe, no hacer nada (ya está en la receta)
-      }
-
-      // 2. Quitar materiales que ya no están en la lista (soft delete)
-      for (const existingRelation of existingProductReceipes) {
-        if (!materialsToProcess.has(existingRelation.id_product)) {
-          try {
-            const removed = await trx('nubestock.tb_mae_product_receipe')
-              .where('id', existingRelation.id)
-              .update({
-                is_active: false,
-                modification_date: now,
-              })
-              .returning('*');
-            
-            if (removed && removed.length > 0) {
-              results.removed.push({
-                id: existingRelation.id,
-                id_product: existingRelation.id_product,
-              });
-            }
-          } catch (error) {
-            logger.error(`Error al quitar material ${existingRelation.id_product}:`, error);
-            results.errors.push({
-              id_product: existingRelation.id_product,
-              operation: 'remove',
-              error: error instanceof Error ? error.message : 'Error desconocido',
-            });
-          }
-        }
-      }
+      await addNewMaterials(trx, materials, existingMaterialMap, receipeId, now, results);
+      await removeOldMaterials(trx, existingProductReceipes, new Set(materialIds), now, results);
     });
 
     // Obtener la receta actualizada completa (solo relaciones activas)

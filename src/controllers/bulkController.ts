@@ -8,53 +8,124 @@ import Joi from 'joi';
 
 const db = Database.getInstance();
 
+interface BulkProduct {
+  name: string;
+  id_category?: number | null;
+  id_origin: number;
+  id_measure: number;
+  sku: string;
+  type?: 'PF' | 'MP';
+  quantity?: number;
+  min_stock?: number;
+  price: number;
+}
+
+interface BulkResults {
+  successful: any[];
+  updated: any[];
+  failed: Array<{ index: number; product: any; error: string }>;
+  total: number;
+}
+
+const bulkProductSchema = Joi.array().items(
+  Joi.object({
+    name: Joi.string().min(2).max(200).required(),
+    id_category: Joi.number().integer().optional().allow(null),
+    id_origin: Joi.number().integer().required(),
+    id_measure: Joi.number().integer().required(),
+    sku: Joi.string().min(2).max(100).required(),
+    type: Joi.string().valid('PF', 'MP').default('PF'),
+    quantity: Joi.when('type', {
+      is: 'MP',
+      then: Joi.number().min(0).default(0).messages({
+        'number.min': 'La cantidad debe ser mayor o igual a 0',
+        'number.base': 'La cantidad debe ser un número válido (se permiten decimales para MP)'
+      }),
+      otherwise: Joi.number().integer().min(0).default(0).messages({
+        'number.min': 'La cantidad debe ser mayor o igual a 0',
+        'number.base': 'La cantidad debe ser un número válido',
+        'number.integer': 'La cantidad debe ser un número entero para productos tipo PF'
+      })
+    }),
+    min_stock: Joi.when('type', {
+      is: 'MP',
+      then: Joi.number().min(0).default(0).messages({
+        'number.min': 'El valor umbral debe ser mayor o igual a 0',
+        'number.base': 'El valor umbral debe ser un número válido (se permiten decimales para MP)'
+      }),
+      otherwise: Joi.number().integer().min(0).default(0).messages({
+        'number.min': 'El valor umbral debe ser mayor o igual a 0',
+        'number.base': 'El valor umbral debe ser un número válido',
+        'number.integer': 'El valor umbral debe ser un número entero para productos tipo PF'
+      })
+    }),
+    price: Joi.number().min(0).required().messages({
+      'number.base': 'El precio debe ser un número válido',
+      'number.min': 'El precio debe ser mayor o igual a 0',
+      'any.required': 'El precio es obligatorio'
+    }),
+  })
+).min(1).max(1000);
+
+function findDuplicateSkus(products: BulkProduct[]): { duplicateSkus: number[]; skuToIndex: Map<string, number> } {
+  const skuSet = new Set<string>();
+  const duplicateSkus: number[] = [];
+  const skuToIndex = new Map<string, number>();
+  
+  products.forEach((product, index) => {
+    if (skuSet.has(product.sku)) {
+      duplicateSkus.push(index);
+    } else {
+      skuSet.add(product.sku);
+      skuToIndex.set(product.sku, index);
+    }
+  });
+  
+  return { duplicateSkus, skuToIndex };
+}
+
+function buildBulkResponse(results: BulkResults): { status: number; body: any } {
+  const totalProcessed = results.successful.length + results.updated.length;
+  const responseBody = {
+    success: results.failed.length === 0,
+    message: `Procesados ${results.total} producto(s): ${results.successful.length} creado(s), ${results.updated.length} actualizado(s), ${results.failed.length} fallido(s)`,
+    data: {
+      total: results.total,
+      created: results.successful.length,
+      updated: results.updated.length,
+      failed: results.failed.length,
+      products: [
+        ...results.successful.map(r => ({ ...r.product, action: 'created' })),
+        ...results.updated.map(r => ({ ...r.product, action: 'updated' })),
+      ],
+      errors: results.failed.map(r => ({
+        index: r.index + 1,
+        sku: r.product.sku,
+        name: r.product.name,
+        error: r.error,
+      })),
+    },
+    timestamp: new Date().toISOString(),
+  };
+
+  let status: number;
+  if (results.failed.length > 0 && totalProcessed > 0) {
+    status = 207;
+  } else if (results.failed.length === results.total) {
+    status = 400;
+  } else {
+    status = 201;
+  }
+  
+  return { status, body: responseBody };
+}
+
 /**
  * Crear múltiples productos en una sola operación (bulk create/update)
  * Soporta tanto creación como actualización basada en SKU
  */
 export async function bulkCreateProducts(context: Context, req: HttpRequest): Promise<void> {
   try {
-    // Validación condicional para cada producto según su tipo
-    const bulkProductSchema = Joi.array().items(
-      Joi.object({
-        name: Joi.string().min(2).max(200).required(),
-        id_category: Joi.number().integer().optional().allow(null),
-        id_origin: Joi.number().integer().required(),
-        id_measure: Joi.number().integer().required(),
-        sku: Joi.string().min(2).max(100).required(),
-        type: Joi.string().valid('PF', 'MP').default('PF'),
-        quantity: Joi.when('type', {
-          is: 'MP',
-          then: Joi.number().min(0).default(0).messages({
-            'number.min': 'La cantidad debe ser mayor o igual a 0',
-            'number.base': 'La cantidad debe ser un número válido (se permiten decimales para MP)'
-          }),
-          otherwise: Joi.number().integer().min(0).default(0).messages({
-            'number.min': 'La cantidad debe ser mayor o igual a 0',
-            'number.base': 'La cantidad debe ser un número válido',
-            'number.integer': 'La cantidad debe ser un número entero para productos tipo PF'
-          })
-        }),
-        min_stock: Joi.when('type', {
-          is: 'MP',
-          then: Joi.number().min(0).default(0).messages({
-            'number.min': 'El valor umbral debe ser mayor o igual a 0',
-            'number.base': 'El valor umbral debe ser un número válido (se permiten decimales para MP)'
-          }),
-          otherwise: Joi.number().integer().min(0).default(0).messages({
-            'number.min': 'El valor umbral debe ser mayor o igual a 0',
-            'number.base': 'El valor umbral debe ser un número válido',
-            'number.integer': 'El valor umbral debe ser un número entero para productos tipo PF'
-          })
-        }),
-        price: Joi.number().min(0).required().messages({
-          'number.base': 'El precio debe ser un número válido',
-          'number.min': 'El precio debe ser mayor o igual a 0',
-          'any.required': 'El precio es obligatorio'
-        }),
-      })
-    ).min(1).max(1000); // Máximo 1000 productos por carga
-
     const { error, value } = bulkProductSchema.validate(req.body);
     
     if (error) {
@@ -73,50 +144,24 @@ export async function bulkCreateProducts(context: Context, req: HttpRequest): Pr
       return;
     }
 
-    const products = value as Array<{
-      name: string;
-      id_category?: number | null;
-      id_origin: number;
-      id_measure: number;
-      sku: string;
-      type?: 'PF' | 'MP';
-      quantity?: number;
-      min_stock?: number;
-      price: number;
-    }>;
-
-    const results = {
-      successful: [] as any[],
-      updated: [] as any[],
-      failed: [] as Array<{ index: number; product: any; error: string }>,
+    const products = value as BulkProduct[];
+    const results: BulkResults = {
+      successful: [],
+      updated: [],
+      failed: [],
       total: products.length,
     };
 
-    // Verificar SKUs duplicados en el lote
-    const skuSet = new Set<string>();
-    const duplicateSkus: number[] = [];
-    const skuToIndex = new Map<string, number>();
+    const { duplicateSkus } = findDuplicateSkus(products);
     
-    products.forEach((product, index) => {
-      if (skuSet.has(product.sku)) {
-        duplicateSkus.push(index);
-      } else {
-        skuSet.add(product.sku);
-        skuToIndex.set(product.sku, index);
-      }
+    duplicateSkus.forEach(index => {
+      results.failed.push({
+        index,
+        product: products[index],
+        error: 'SKU duplicado en el mismo lote',
+      });
     });
 
-    if (duplicateSkus.length > 0) {
-      duplicateSkus.forEach(index => {
-        results.failed.push({
-          index,
-          product: products[index],
-          error: 'SKU duplicado en el mismo lote',
-        });
-      });
-    }
-
-    // Filtrar productos válidos (sin duplicados en el lote)
     const validProducts = products.filter((_, index) => !duplicateSkus.includes(index));
     if (validProducts.length === 0) {
       context.res = {
@@ -143,7 +188,6 @@ export async function bulkCreateProducts(context: Context, req: HttpRequest): Pr
       return;
     }
 
-    // Obtener userId del request
     const authResult = requireAuth(req);
     if (!authResult.success || !authResult.user) {
       context.res = {
@@ -437,49 +481,7 @@ export async function bulkCreateProducts(context: Context, req: HttpRequest): Pr
       });
     }
 
-    // Preparar respuesta
-    const totalProcessed = results.successful.length + results.updated.length;
-    const responseBody: any = {
-      success: results.failed.length === 0,
-      message: `Procesados ${results.total} producto(s): ${results.successful.length} creado(s), ${results.updated.length} actualizado(s), ${results.failed.length} fallido(s)`,
-      data: {
-        total: results.total,
-        created: results.successful.length,
-        updated: results.updated.length,
-        failed: results.failed.length,
-        products: [
-          ...results.successful.map(r => ({ ...r.product, action: 'created' })),
-          ...results.updated.map(r => ({ ...r.product, action: 'updated' })),
-        ],
-        errors: results.failed.map(r => ({
-          index: r.index + 1, // +1 para mostrar índice basado en 1
-          sku: r.product.sku,
-          name: r.product.name,
-          error: r.error,
-        })),
-      },
-      timestamp: new Date().toISOString(),
-    };
-
-    // Si hay errores pero también éxitos, retornar 207 (Multi-Status)
-    // Si todos fallaron, retornar 400
-    // Si todos fueron exitosos (creados o actualizados), retornar 201
-    if (results.failed.length > 0 && totalProcessed > 0) {
-      context.res = {
-        status: 207, // Multi-Status
-        body: responseBody,
-      };
-    } else if (results.failed.length === results.total) {
-      context.res = {
-        status: 400,
-        body: responseBody,
-      };
-    } else {
-      context.res = {
-        status: 201,
-        body: responseBody,
-      };
-    }
+    context.res = buildBulkResponse(results);
   } catch (error) {
     logger.error('Error en carga masiva de productos:', error);
     context.res = {
@@ -493,94 +495,128 @@ export async function bulkCreateProducts(context: Context, req: HttpRequest): Pr
   }
 }
 
+interface BulkMaterial {
+  name: string;
+  sku: string;
+  id_category?: number | null;
+  id_origin: number;
+  id_measure: number;
+  min_stock?: number;
+  quantity?: number;
+  price: number;
+}
+
+interface MaterialResults {
+  successful: any[];
+  updated: any[];
+  failed: Array<{ index: number; material: any; error: string }>;
+  total: number;
+}
+
+const bulkMaterialSchema = Joi.array().items(
+  Joi.object({
+    name: Joi.string().min(2).max(200).required(),
+    sku: Joi.string().min(2).max(100).required(),
+    id_category: Joi.number().integer().optional().allow(null),
+    id_origin: Joi.number().integer().required(),
+    id_measure: Joi.number().integer().required(),
+    min_stock: Joi.number().min(0).default(0).messages({
+      'number.min': 'El stock mínimo debe ser mayor o igual a 0',
+      'number.base': 'El stock mínimo debe ser un número válido (se permiten decimales para materiales MP)'
+    }),
+    quantity: Joi.number().min(0).default(0).messages({
+      'number.min': 'La cantidad debe ser mayor o igual a 0',
+      'number.base': 'La cantidad debe ser un número válido (se permiten decimales para materiales MP)'
+    }),
+    price: Joi.number().min(0).required().messages({
+      'number.base': 'El precio debe ser un número válido',
+      'number.min': 'El precio debe ser mayor o igual a 0',
+      'any.required': 'El precio es obligatorio'
+    }),
+  })
+).min(1).max(1000);
+
+function extractArrayFromBody(body: any): { data: any[] | null; error: string | null } {
+  let bodyData = body;
+  
+  if (typeof bodyData === 'string') {
+    try {
+      bodyData = JSON.parse(bodyData);
+      logger.info('Parsed body from string, is array:', Array.isArray(bodyData));
+    } catch {
+      return { data: null, error: 'Error al parsear el cuerpo de la petición' };
+    }
+  }
+
+  if (Array.isArray(bodyData)) {
+    return { data: bodyData, error: null };
+  }
+
+  if (typeof bodyData === 'object' && bodyData !== null) {
+    if (Array.isArray(bodyData.materials)) {
+      logger.info('Extracted array from body.materials');
+      return { data: bodyData.materials, error: null };
+    }
+    if (Array.isArray(bodyData.data)) {
+      logger.info('Extracted array from body.data');
+      return { data: bodyData.data, error: null };
+    }
+  }
+
+  return { data: null, error: 'El cuerpo de la petición debe ser un array de materiales' };
+}
+
+function buildMaterialResponse(results: MaterialResults): { status: number; body: any } {
+  const created = results.successful.length;
+  const updated = results.updated.length;
+  const failed = results.failed.length;
+
+  return {
+    status: failed === 0 ? 201 : 207,
+    body: {
+      success: failed === 0,
+      message: failed === 0
+        ? `Se procesaron ${created + updated} material(es) exitosamente`
+        : `Se procesaron ${created + updated} material(es), ${failed} fallaron`,
+      data: {
+        total: results.total,
+        created,
+        updated,
+        failed,
+        materials: [...results.successful, ...results.updated].map(r => r.material),
+        errors: results.failed.map(r => ({
+          index: r.index + 1,
+          sku: r.material.sku,
+          name: r.material.name,
+          error: r.error,
+        })),
+      },
+      timestamp: new Date().toISOString(),
+    },
+  };
+}
+
 /**
  * Crear múltiples materiales en una sola operación (bulk create/update)
  * Soporta tanto creación como actualización basada en SKU
  */
 export async function bulkCreateMaterials(context: Context, req: HttpRequest): Promise<void> {
   try {
-    // Log inicial para debugging
     logger.info('Bulk materials request received');
     
-    // Asegurar que el body sea un array
-    let bodyData: any = req.body;
+    const { data: bodyData, error: extractError } = extractArrayFromBody(req.body);
     
-    // Si el body es string, parsearlo
-    if (typeof bodyData === 'string') {
-      try {
-        bodyData = JSON.parse(bodyData);
-        logger.info('Parsed body from string, is array:', Array.isArray(bodyData));
-      } catch (parseError) {
-        logger.error('Error parsing body:', parseError);
-        context.res = {
-          status: 400,
-          body: {
-            success: false,
-            message: 'Error al parsear el cuerpo de la petición',
-            timestamp: new Date().toISOString(),
-          },
-        };
-        return;
-      }
+    if (extractError || !bodyData) {
+      context.res = {
+        status: 400,
+        body: {
+          success: false,
+          message: extractError || 'El cuerpo de la petición debe ser un array de materiales',
+          timestamp: new Date().toISOString(),
+        },
+      };
+      return;
     }
-
-    // Si el body es un objeto pero no un array, intentar extraer el array
-    if (!Array.isArray(bodyData)) {
-      if (typeof bodyData === 'object' && bodyData !== null) {
-        // Intentar encontrar el array en propiedades comunes
-        if (Array.isArray((bodyData as any).materials)) {
-          bodyData = (bodyData as any).materials;
-          logger.info('Extracted array from body.materials');
-        } else if (Array.isArray((bodyData as any).data)) {
-          bodyData = (bodyData as any).data;
-          logger.info('Extracted array from body.data');
-        } else {
-          context.res = {
-            status: 400,
-            body: {
-              success: false,
-              message: 'El cuerpo de la petición debe ser un array de materiales',
-              timestamp: new Date().toISOString(),
-            },
-          };
-          return;
-        }
-      } else {
-        context.res = {
-          status: 400,
-          body: {
-            success: false,
-            message: 'El cuerpo de la petición debe ser un array de materiales',
-            timestamp: new Date().toISOString(),
-          },
-        };
-        return;
-      }
-    }
-
-    // Los materiales siempre son tipo MP, por lo que permiten decimales
-    const bulkMaterialSchema = Joi.array().items(
-      Joi.object({
-        name: Joi.string().min(2).max(200).required(),
-        sku: Joi.string().min(2).max(100).required(),
-        id_category: Joi.number().integer().optional().allow(null),
-        id_origin: Joi.number().integer().required(),
-        id_measure: Joi.number().integer().required(),
-        min_stock: Joi.number().min(0).default(0).messages({
-          'number.min': 'El stock mínimo debe ser mayor o igual a 0',
-          'number.base': 'El stock mínimo debe ser un número válido (se permiten decimales para materiales MP)'
-        }),
-        quantity: Joi.number().min(0).default(0).messages({
-          'number.min': 'La cantidad debe ser mayor o igual a 0',
-          'number.base': 'La cantidad debe ser un número válido (se permiten decimales para materiales MP)'
-        }),
-        price: Joi.number().min(0).required().messages({
-          'number.base': 'El precio debe ser un número válido',
-          'number.min': 'El precio debe ser mayor o igual a 0',
-          'any.required': 'El precio es obligatorio'
-        }),
-      })
-    ).min(1).max(1000); // Máximo 1000 materiales por carga
 
     const { error, value } = bulkMaterialSchema.validate(bodyData, {
       abortEarly: false,
@@ -606,47 +642,24 @@ export async function bulkCreateMaterials(context: Context, req: HttpRequest): P
       return;
     }
 
-    const materials = value as Array<{
-      name: string;
-      sku: string;
-      id_category?: number | null;
-      id_origin: number;
-      id_measure: number;
-      min_stock?: number;
-      quantity?: number;
-      price: number;
-    }>;
-
-    const results = {
-      successful: [] as any[],
-      updated: [] as any[],
-      failed: [] as Array<{ index: number; material: any; error: string }>,
+    const materials = value as BulkMaterial[];
+    const results: MaterialResults = {
+      successful: [],
+      updated: [],
+      failed: [],
       total: materials.length,
     };
 
-    // Verificar SKUs duplicados en el lote
-    const skuSet = new Set<string>();
-    const duplicateSkus: number[] = [];
+    const { duplicateSkus } = findDuplicateSkus(materials);
     
-    materials.forEach((material, index) => {
-      if (skuSet.has(material.sku)) {
-        duplicateSkus.push(index);
-      } else {
-        skuSet.add(material.sku);
-      }
+    duplicateSkus.forEach(index => {
+      results.failed.push({
+        index,
+        material: materials[index],
+        error: 'SKU de material duplicado en el mismo lote',
+      });
     });
 
-    if (duplicateSkus.length > 0) {
-      duplicateSkus.forEach(index => {
-        results.failed.push({
-          index,
-          material: materials[index],
-          error: 'SKU de material duplicado en el mismo lote',
-        });
-      });
-    }
-
-    // Filtrar materiales válidos (sin duplicados en el lote)
     const validMaterials = materials.filter((_, index) => !duplicateSkus.includes(index));
     if (validMaterials.length === 0) {
       context.res = {
@@ -819,33 +832,7 @@ export async function bulkCreateMaterials(context: Context, req: HttpRequest): P
       }
     });
 
-    const created = results.successful.length;
-    const updated = results.updated.length;
-    const failed = results.failed.length;
-
-    context.res = {
-      status: failed === 0 ? 201 : 207, // 207 Multi-Status si hay algunos fallidos
-      body: {
-        success: failed === 0,
-        message: failed === 0
-          ? `Se procesaron ${created + updated} material(es) exitosamente`
-          : `Se procesaron ${created + updated} material(es), ${failed} fallaron`,
-        data: {
-          total: results.total,
-          created,
-          updated,
-          failed,
-          materials: [...results.successful, ...results.updated].map(r => r.material),
-          errors: results.failed.map(r => ({
-            index: r.index + 1,
-            sku: r.material.sku,
-            name: r.material.name,
-            error: r.error,
-          })),
-        },
-        timestamp: new Date().toISOString(),
-      },
-    };
+    context.res = buildMaterialResponse(results);
   } catch (error) {
     logger.error('Error en carga masiva de materiales:', error);
     context.res = {
@@ -859,17 +846,118 @@ export async function bulkCreateMaterials(context: Context, req: HttpRequest): P
   }
 }
 
+interface ClientResults {
+  total: number;
+  successful: Array<{ index: number; client: any }>;
+  updated: Array<{ index: number; client: any }>;
+  failed: Array<{ index: number; client: any; error: string }>;
+}
+
+const bulkClientSchema = clientSchema.keys({
+  is_active: Joi.boolean().optional(),
+});
+
+function validateAndFilterClients(
+  clients: any[],
+  schema: Joi.ObjectSchema
+): { validClients: any[]; duplicateIdentifications: number[]; validationErrors: Array<{ index: number; error: string }> } {
+  const validClients: any[] = [];
+  const duplicateIdentifications: number[] = [];
+  const identificationSet = new Set<string>();
+  const validationErrors: Array<{ index: number; error: string }> = [];
+
+  clients.forEach((client, index) => {
+    const { error, value } = schema.validate(client);
+    if (error) {
+      validationErrors.push({
+        index,
+        error: `Validación: ${error.details.map(d => d.message).join(', ')}`
+      });
+      return;
+    }
+    
+    if (identificationSet.has(value.identification)) {
+      duplicateIdentifications.push(index);
+      validationErrors.push({
+        index,
+        error: 'Identificación duplicada en el batch'
+      });
+      return;
+    }
+    
+    identificationSet.add(value.identification);
+    validClients.push({ ...value, originalIndex: index });
+  });
+
+  return { validClients, duplicateIdentifications, validationErrors };
+}
+
+function buildClientUpdateData(clientData: any, now: Date): Record<string, any> {
+  const updateData: Record<string, any> = { modification_date: now };
+  const fields = [
+    'name', 'identification', 'identification_type', 'email', 'phone',
+    'address', 'id_province', 'id_city', 'requires_credit', 'credit_limit',
+    'credit_days', 'is_active'
+  ];
+  
+  for (const field of fields) {
+    if (clientData[field] !== undefined) {
+      updateData[field] = clientData[field];
+    }
+  }
+  
+  return updateData;
+}
+
+function buildClientResponse(results: ClientResults): { status: number; body: any } {
+  const totalProcessed = results.successful.length + results.updated.length;
+  const responseBody = {
+    success: results.failed.length === 0,
+    message: `Procesados ${results.total} cliente(s): ${results.successful.length} creado(s), ${results.updated.length} actualizado(s), ${results.failed.length} fallido(s)`,
+    data: {
+      total: results.total,
+      created: results.successful.length,
+      updated: results.updated.length,
+      failed: results.failed.length,
+      clients: [
+        ...results.successful.map(r => ({ ...r.client, action: 'created' })),
+        ...results.updated.map(r => ({ ...r.client, action: 'updated' })),
+      ],
+      errors: results.failed.map(r => ({
+        index: r.index + 1,
+        identification: r.client.identification || 'N/A',
+        name: r.client.name || 'N/A',
+        error: r.error,
+      })),
+    },
+    timestamp: new Date().toISOString(),
+  };
+
+  let status: number;
+  if (results.failed.length > 0 && totalProcessed > 0) {
+    status = 207;
+  } else if (results.failed.length === results.total) {
+    status = 400;
+  } else {
+    status = 201;
+  }
+  
+  return { status, body: responseBody };
+}
+
+function determineTransactionErrorType(errorMessage: string): string {
+  if (errorMessage.includes('INSERT') || errorMessage.includes('insert')) return 'INSERT Error';
+  if (errorMessage.includes('UPDATE') || errorMessage.includes('update')) return 'UPDATE Error';
+  if (errorMessage.includes('SELECT') || errorMessage.includes('select')) return 'SELECT Error';
+  return 'TRANSACTION Error';
+}
+
 /**
  * Crear múltiples clientes en una sola operación (bulk create/update)
  * Soporta tanto creación como actualización basada en identificación o email
  */
 export async function bulkCreateClients(context: Context, req: HttpRequest): Promise<void> {
   try {
-    // Extend clientSchema for bulk operations (adds is_active field)
-    const bulkClientSchema = clientSchema.keys({
-      is_active: Joi.boolean().optional(),
-    });
-
     const clients = req.body as any[];
     
     if (!Array.isArray(clients) || clients.length === 0) {
@@ -896,37 +984,8 @@ export async function bulkCreateClients(context: Context, req: HttpRequest): Pro
       return;
     }
 
-    // Validar y procesar clientes
-    const validClients: any[] = [];
-    const duplicateIdentifications: number[] = [];
-    const identificationSet = new Set<string>();
-    const validationErrors: Array<{ index: number; error: string }> = [];
+    const { validClients, duplicateIdentifications, validationErrors } = validateAndFilterClients(clients, bulkClientSchema);
 
-    // Verificar duplicados dentro del batch
-    clients.forEach((client, index) => {
-      const { error, value } = bulkClientSchema.validate(client);
-      if (error) {
-        validationErrors.push({
-          index,
-          error: `Validación: ${error.details.map(d => d.message).join(', ')}`
-        });
-        return;
-      }
-      
-      if (identificationSet.has(value.identification)) {
-        duplicateIdentifications.push(index);
-        validationErrors.push({
-          index,
-          error: 'Identificación duplicada en el batch'
-        });
-        return;
-      }
-      
-      identificationSet.add(value.identification);
-      validClients.push({ ...value, originalIndex: index });
-    });
-
-    // Si no hay clientes válidos, retornar errores detallados
     if (validClients.length === 0) {
       context.res = {
         status: 400,
@@ -951,11 +1010,11 @@ export async function bulkCreateClients(context: Context, req: HttpRequest): Pro
       return;
     }
 
-    const results = {
+    const results: ClientResults = {
       total: clients.length,
-      successful: [] as Array<{ index: number; client: any }>,
-      updated: [] as Array<{ index: number; client: any }>,
-      failed: [] as Array<{ index: number; client: any; error: string }>,
+      successful: [],
+      updated: [],
+      failed: [],
     };
 
     const now = new Date();
@@ -990,43 +1049,16 @@ export async function bulkCreateClients(context: Context, req: HttpRequest): Pro
           const clientsToUpdate: Array<{ id: number; data: any; index: number; client: any }> = [];
 
           validClients.forEach((client) => {
-            // Extraer originalIndex antes de usar el cliente
             const { originalIndex, ...clientData } = client;
             
-            // Verificar primero por identificación, luego por email
             const existingByIdentification = existingIdentificationMap.get(clientData.identification);
             const existingByEmail = clientData.email ? existingEmailMap.get(clientData.email) : null;
-            
-            let existingId: number | undefined;
-            
-            if (existingByIdentification) {
-              // Si existe por identificación, usar ese ID
-              existingId = existingByIdentification.id;
-            } else if (existingByEmail) {
-              // Si no existe por identificación pero sí por email, usar ese ID
-              existingId = existingByEmail.id;
-            }
+            const existingId = existingByIdentification?.id ?? existingByEmail?.id;
             
             if (existingId) {
-              const updateData: any = {
-                modification_date: now,
-              };
-              if (clientData.name !== undefined) updateData.name = clientData.name;
-              if (clientData.identification !== undefined) updateData.identification = clientData.identification;
-              if (clientData.identification_type !== undefined) updateData.identification_type = clientData.identification_type;
-              if (clientData.email !== undefined) updateData.email = clientData.email;
-              if (clientData.phone !== undefined) updateData.phone = clientData.phone;
-              if (clientData.address !== undefined) updateData.address = clientData.address;
-              if (clientData.id_province !== undefined) updateData.id_province = clientData.id_province;
-              if (clientData.id_city !== undefined) updateData.id_city = clientData.id_city;
-              if (clientData.requires_credit !== undefined) updateData.requires_credit = clientData.requires_credit;
-              if (clientData.credit_limit !== undefined) updateData.credit_limit = clientData.credit_limit;
-              if (clientData.credit_days !== undefined) updateData.credit_days = clientData.credit_days;
-              if (clientData.is_active !== undefined) updateData.is_active = clientData.is_active;
-
               clientsToUpdate.push({
                 id: existingId,
-                data: updateData,
+                data: buildClientUpdateData(clientData, now),
                 index: originalIndex,
                 client: clientData
               });
@@ -1035,7 +1067,7 @@ export async function bulkCreateClients(context: Context, req: HttpRequest): Pro
                 ...clientData,
                 is_active: clientData.is_active !== undefined ? clientData.is_active : true,
                 creation_date: now,
-                originalIndex: originalIndex, // Guardar temporalmente para tracking
+                originalIndex: originalIndex,
               });
             }
           });
@@ -1135,14 +1167,7 @@ export async function bulkCreateClients(context: Context, req: HttpRequest): Pro
         ? transactionError.message 
         : 'Error desconocido en la transacción';
       
-      let errorType = 'TRANSACTION Error';
-      if (errorMessage.includes('INSERT') || errorMessage.includes('insert')) {
-        errorType = 'INSERT Error';
-      } else if (errorMessage.includes('UPDATE') || errorMessage.includes('update')) {
-        errorType = 'UPDATE Error';
-      } else if (errorMessage.includes('SELECT') || errorMessage.includes('select')) {
-        errorType = 'SELECT Error';
-      }
+      const errorType = determineTransactionErrorType(errorMessage);
       
       validClients.forEach((client) => {
         const alreadyProcessed = results.successful.some(r => r.index === client.originalIndex) ||
@@ -1158,7 +1183,6 @@ export async function bulkCreateClients(context: Context, req: HttpRequest): Pro
       });
     }
 
-    // Agregar errores de validación y duplicados
     clients.forEach((client, index) => {
       const { error } = clientSchema.validate(client);
       if (error) {
@@ -1176,46 +1200,7 @@ export async function bulkCreateClients(context: Context, req: HttpRequest): Pro
       }
     });
 
-    // Preparar respuesta
-    const totalProcessed = results.successful.length + results.updated.length;
-    const responseBody: any = {
-      success: results.failed.length === 0,
-      message: `Procesados ${results.total} cliente(s): ${results.successful.length} creado(s), ${results.updated.length} actualizado(s), ${results.failed.length} fallido(s)`,
-      data: {
-        total: results.total,
-        created: results.successful.length,
-        updated: results.updated.length,
-        failed: results.failed.length,
-        clients: [
-          ...results.successful.map(r => ({ ...r.client, action: 'created' })),
-          ...results.updated.map(r => ({ ...r.client, action: 'updated' })),
-        ],
-        errors: results.failed.map(r => ({
-          index: r.index + 1,
-          identification: r.client.identification || 'N/A',
-          name: r.client.name || 'N/A',
-          error: r.error,
-        })),
-      },
-      timestamp: new Date().toISOString(),
-    };
-
-    if (results.failed.length > 0 && totalProcessed > 0) {
-      context.res = {
-        status: 207,
-        body: responseBody,
-      };
-    } else if (results.failed.length === results.total) {
-      context.res = {
-        status: 400,
-        body: responseBody,
-      };
-    } else {
-      context.res = {
-        status: 201,
-        body: responseBody,
-      };
-    }
+    context.res = buildClientResponse(results);
   } catch (error) {
     logger.error('Error en carga masiva de clientes:', error);
     context.res = {
