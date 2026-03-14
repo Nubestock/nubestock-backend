@@ -33,8 +33,16 @@ export class EmailService {
    * Envía un correo electrónico usando Azure Communication Services
    */
   async sendEmail(options: EmailOptions): Promise<boolean> {
+    logger.info('[Email] Intento de envío', {
+      to: options.to,
+      subject: options.subject,
+      emailEnabled: config.email.enabled,
+      hasClient: !!this.emailClient,
+      senderAddress: config.email.from || '(no configurado)',
+    });
+
     if (!config.email.enabled || !this.emailClient) {
-      logger.warn('Email service is disabled. Email not sent.', {
+      logger.warn('[Email] NO enviado: servicio deshabilitado o cliente no inicializado. Compruebe EMAIL_ENABLED=true y AZURE_COMMUNICATION_CONNECTION_STRING.', {
         to: options.to,
         subject: options.subject,
       });
@@ -59,17 +67,24 @@ export class EmailService {
         },
       };
 
+      logger.info('[Email] Enviando a Azure Communication Services...', { to: options.to, subject: options.subject });
       const poller = await this.emailClient.beginSend(emailMessage);
       const result = await poller.pollUntilDone();
 
-      logger.info('Email sent successfully via Azure Communication Services', {
+      logger.info('[Email] Enviado correctamente', {
         to: options.to,
         subject: options.subject,
         messageId: result.id,
       });
       return true;
-    } catch (error) {
-      logger.error('Error sending email via Azure Communication Services:', error);
+    } catch (error: unknown) {
+      const err = error as Error;
+      logger.error('[Email] Error al enviar', {
+        to: options.to,
+        subject: options.subject,
+        errorMessage: err.message,
+        errorName: err.name,
+      });
       throw error;
     }
   }
@@ -161,6 +176,7 @@ Si tienes alguna pregunta, contacta al administrador del sistema.
 © ${new Date().getFullYear()} Nubestock. Todos los derechos reservados.
     `;
 
+    logger.info('[Email] Enviando email de bienvenida', { to: userEmail, userName });
     return this.sendEmail({
       to: userEmail,
       subject: 'Bienvenido a Nubestock - Credenciales de Acceso',
@@ -246,6 +262,7 @@ Este es un correo automático, por favor no respondas a este mensaje.
 © ${new Date().getFullYear()} Nubestock. Todos los derechos reservados.
     `;
 
+    logger.info('[Email] Enviando email de restablecimiento de contraseña', { to: userEmail, userName });
     return this.sendEmail({
       to: userEmail,
       subject: 'Restablecer Contraseña - Nubestock',

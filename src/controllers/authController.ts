@@ -271,6 +271,7 @@ async function handlePasswordResetRequest(context: Context, req: HttpRequest): P
     return;
   }
 
+  logger.info('[Auth] Solicitud de restablecimiento de contraseña recibida (POST)', { email });
   await authService.requestPasswordReset(email);
   
   context.res = {
@@ -426,6 +427,10 @@ export async function adminResetPassword(context: Context, req: HttpRequest): Pr
 
     const { email } = value;
 
+    logger.info('[Auth] Solicitud de restablecimiento de contraseña por administrador', {
+      targetEmail: email,
+      requestedBy: adminUser.userEmail,
+    });
     // Solicitar reset de contraseña como administrador
     const userInfo = await authService.requestPasswordResetByAdmin(email, adminUser.userId);
     

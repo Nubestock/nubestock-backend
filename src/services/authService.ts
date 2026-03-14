@@ -49,6 +49,10 @@ export class AuthService {
       });
 
       // Enviar email de bienvenida con la contraseña por defecto
+      logger.info('[Auth] Enviando notificación de bienvenida a nuevo usuario', {
+        userId: (newUser as any).id,
+        email: newUser.email,
+      });
       try {
         const emailSent = await emailService.sendWelcomeEmail(
           newUser.email,
@@ -56,18 +60,22 @@ export class AuthService {
           plainPassword
         );
         if (emailSent) {
-          logger.info('Email de bienvenida enviado exitosamente', {
+          logger.info('[Auth] Notificación de bienvenida enviada correctamente', {
             userId: (newUser as any).id,
             email: newUser.email,
           });
         } else {
-          logger.warn('Email de bienvenida no enviado (servicio deshabilitado)', {
+          logger.warn('[Auth] Notificación de bienvenida NO enviada (servicio de email deshabilitado)', {
             userId: (newUser as any).id,
             email: newUser.email,
           });
         }
       } catch (emailError) {
-        logger.error('Error al enviar email de bienvenida:', emailError);
+        logger.error('[Auth] Error al enviar notificación de bienvenida', {
+          userId: (newUser as any).id,
+          email: newUser.email,
+          error: emailError,
+        });
         // No fallamos la operación si el email falla, solo logueamos el error
         // El usuario ya fue creado exitosamente
       }
@@ -258,22 +266,30 @@ export class AuthService {
       await this.storeResetToken(user.id, resetToken, expiresAt);
 
       // Enviar email al usuario
+      logger.info('[Auth] Enviando notificación de restablecimiento de contraseña (solicitud usuario)', {
+        userId: user.id,
+        email: user.email,
+      });
       try {
         const emailSent = await emailService.sendPasswordResetEmail(user.email, user.name, resetToken);
         if (emailSent) {
-          logger.info('Email de restablecimiento enviado exitosamente', {
+          logger.info('[Auth] Notificación de restablecimiento enviada correctamente', {
             userId: user.id,
             email: user.email,
           });
         } else {
-          logger.warn('Email de restablecimiento no enviado (servicio deshabilitado). Token generado:', {
+          logger.warn('[Auth] Notificación NO enviada (servicio de email deshabilitado). Token generado correctamente.', {
             userId: user.id,
             email: user.email,
-            resetToken: resetToken.substring(0, 10) + '...', // Solo primeros 10 caracteres para logs
+            resetToken: resetToken.substring(0, 10) + '...',
           });
         }
       } catch (emailError) {
-        logger.error('Error al enviar email de restablecimiento:', emailError);
+        logger.error('[Auth] Error al enviar notificación de restablecimiento', {
+          userId: user.id,
+          email: user.email,
+          error: emailError,
+        });
         // No fallamos la operación si el email falla, solo logueamos el error
       }
 
@@ -376,22 +392,31 @@ export class AuthService {
       await this.storeResetToken(user.id, resetToken, expiresAt);
 
       // Enviar email al usuario
+      logger.info('[Auth] Enviando notificación de restablecimiento de contraseña (solicitud admin)', {
+        targetUserId: user.id,
+        targetEmail: user.email,
+        requestedBy,
+      });
       try {
         const emailSent = await emailService.sendPasswordResetEmail(user.email, user.name, resetToken);
         if (emailSent) {
-          logger.info('Email de restablecimiento enviado exitosamente', {
+          logger.info('[Auth] Notificación de restablecimiento enviada correctamente (admin)', {
             targetUserId: user.id,
             targetEmail: user.email,
           });
         } else {
-          logger.warn('Email de restablecimiento no enviado (servicio deshabilitado). Token generado:', {
+          logger.warn('[Auth] Notificación NO enviada (servicio de email deshabilitado). Token generado correctamente.', {
             targetUserId: user.id,
             targetEmail: user.email,
-            resetToken: resetToken.substring(0, 10) + '...', // Solo primeros 10 caracteres para logs
+            resetToken: resetToken.substring(0, 10) + '...',
           });
         }
       } catch (emailError) {
-        logger.error('Error al enviar email de restablecimiento:', emailError);
+        logger.error('[Auth] Error al enviar notificación de restablecimiento (admin)', {
+          targetUserId: user.id,
+          targetEmail: user.email,
+          error: emailError,
+        });
         // No fallamos la operación si el email falla, solo logueamos el error
       }
 
