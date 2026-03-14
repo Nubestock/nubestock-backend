@@ -270,6 +270,64 @@ Este es un correo automático, por favor no respondas a este mensaje.
       text,
     });
   }
+
+  /**
+   * Envía un correo de confirmación cuando el usuario cambió su contraseña correctamente
+   */
+  async sendPasswordChangeConfirmationEmail(
+    userEmail: string,
+    userName: string
+  ): Promise<boolean> {
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Cambio de contraseña exitoso - Nubestock</title>
+      </head>
+      <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background-color: #d4edda; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #28a745;">
+          <h1 style="color: #155724; margin-top: 0;">Cambio de contraseña exitoso</h1>
+        </div>
+        
+        <p>Hola <strong>${userName}</strong>,</p>
+        
+        <p>Te confirmamos que tu contraseña ha sido cambiada correctamente en Nubestock.</p>
+        
+        <p>Si no realizaste este cambio, contacta de inmediato al administrador del sistema.</p>
+        
+        <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
+        
+        <p style="color: #7f8c8d; font-size: 12px;">
+          Este es un correo automático, por favor no respondas a este mensaje.<br>
+          © ${new Date().getFullYear()} Nubestock. Todos los derechos reservados.
+        </p>
+      </body>
+      </html>
+    `;
+
+    const text = `
+Cambio de contraseña exitoso - Nubestock
+
+Hola ${userName},
+
+Te confirmamos que tu contraseña ha sido cambiada correctamente en Nubestock.
+
+Si no realizaste este cambio, contacta de inmediato al administrador del sistema.
+
+Este es un correo automático, por favor no respondas a este mensaje.
+© ${new Date().getFullYear()} Nubestock. Todos los derechos reservados.
+    `;
+
+    logger.info('[Email] Enviando email de confirmación de cambio de contraseña', { to: userEmail, userName });
+    return this.sendEmail({
+      to: userEmail,
+      subject: 'Cambio de contraseña exitoso - Nubestock',
+      html,
+      text,
+    });
+  }
 }
 
 // Exportar instancia singleton

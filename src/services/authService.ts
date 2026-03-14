@@ -230,6 +230,18 @@ export class AuthService {
       logger.info('Contraseña cambiada exitosamente', {
         userId,
       });
+
+      // Enviar correo de confirmación (no fallar la operación si el email falla)
+      try {
+        const emailSent = await emailService.sendPasswordChangeConfirmationEmail(user.email, user.name);
+        if (emailSent) {
+          logger.info('[Auth] Correo de confirmación de cambio de contraseña enviado', { userId, email: user.email });
+        } else {
+          logger.warn('[Auth] Correo de confirmación no enviado (servicio de email deshabilitado)', { userId, email: user.email });
+        }
+      } catch (emailError) {
+        logger.error('[Auth] Error al enviar correo de confirmación de cambio de contraseña', { userId, email: user.email, error: emailError });
+      }
     } catch (error) {
       logger.error('Error al cambiar contraseña:', error);
       throw error;
@@ -478,7 +490,7 @@ export class AuthService {
 
       // Verificar que el usuario existe y está activo
       const user = await this.db.getConnection()
-        .select('id', 'email')
+        .select('id', 'email', 'name')
         .from('nubestock.tb_mae_user')
         .where('id', resetToken.id_user)
         .where('is_active', true)
@@ -515,6 +527,18 @@ export class AuthService {
         email: user.email,
         tokenUsed: true,
       });
+
+      // Enviar correo de confirmación (no fallar la operación si el email falla)
+      try {
+        const emailSent = await emailService.sendPasswordChangeConfirmationEmail(user.email, user.name || 'Usuario');
+        if (emailSent) {
+          logger.info('[Auth] Correo de confirmación de cambio de contraseña enviado tras reset', { userId: resetToken.id_user, email: user.email });
+        } else {
+          logger.warn('[Auth] Correo de confirmación no enviado (servicio de email deshabilitado)', { userId: resetToken.id_user, email: user.email });
+        }
+      } catch (emailError) {
+        logger.error('[Auth] Error al enviar correo de confirmación tras reset de contraseña', { userId: resetToken.id_user, email: user.email, error: emailError });
+      }
     } catch (error: any) {
       logger.error('Error al restablecer contraseña:', error);
       throw error;
