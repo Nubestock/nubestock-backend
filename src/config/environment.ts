@@ -37,16 +37,12 @@ export const config = {
     storageKey: process.env.AZURE_STORAGE_KEY || '',
   },
 
-  // Configuración de notificaciones
+  // Configuración de notificaciones (push vía Expo; FCM/APNs solo si se usan directos en el futuro)
   notifications: {
     fcmServerKey: process.env.FCM_SERVER_KEY || '',
     apnsKeyId: process.env.APNS_KEY_ID || '',
     apnsTeamId: process.env.APNS_TEAM_ID || '',
     apnsKeyPath: process.env.APNS_KEY_PATH || '',
-    notificationHubEnabled: process.env.NOTIFICATION_HUB_ENABLED === 'true',
-    notificationHubConnectionString: process.env.NOTIFICATION_HUB_CONNECTION_STRING || '',
-    notificationHubName: process.env.NOTIFICATION_HUB_NAME || '',
-    notificationHubInternalKey: process.env.NOTIFICATION_HUB_INTERNAL_KEY || '',
   },
 
   // Configuración de alertas

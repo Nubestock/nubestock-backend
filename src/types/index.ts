@@ -330,8 +330,4 @@ export interface NotificationConfig {
   apnsKeyId: string;
   apnsTeamId: string;
   apnsKeyPath: string;
-  notificationHubEnabled: boolean;
-  notificationHubConnectionString: string;
-  notificationHubName: string;
-  notificationHubInternalKey: string;
 }

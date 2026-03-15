@@ -2,7 +2,6 @@ import { Context, HttpRequest } from '../types/azure-functions';
 import { Database } from '../config/database';
 import { logger } from '../config/logger';
 import { requireAuth } from '../middleware/authMiddleware';
-import { registerInstallation } from '../services/notificationHubService';
 import Joi from 'joi';
 
 const db = Database.getInstance();
@@ -552,12 +551,6 @@ export async function registerUserDevice(context: Context, req: HttpRequest): Pr
         .into('nubestock.tb_ope_user_device')
         .returning('*');
 
-      await registerInstallation({
-        userId: userIdNum,
-        deviceToken: value.device_token,
-        platform: value.platform,
-      });
-
       context.res = {
         status: 200,
         body: {
@@ -581,12 +574,6 @@ export async function registerUserDevice(context: Context, req: HttpRequest): Pr
       })
       .into('nubestock.tb_ope_user_device')
       .returning('*');
-
-    await registerInstallation({
-      userId: userIdNum,
-      deviceToken: value.device_token,
-      platform: value.platform,
-    });
 
     context.res = {
       status: 201,

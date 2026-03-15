@@ -1,8 +1,8 @@
 jest.mock('../../src/config/logger', () => ({ logger: { error: jest.fn(), info: jest.fn(), warn: jest.fn() } }));
 
-const mockSendAlertNotification = jest.fn();
-jest.mock('../../src/services/notificationHubService', () => ({ 
-  sendAlertNotification: mockSendAlertNotification,
+const mockSendExpoPushNotifications = jest.fn();
+jest.mock('../../src/services/expoPushService', () => ({
+  sendExpoPushNotifications: mockSendExpoPushNotifications,
 }));
 
 const mockGetConnection = jest.fn();
@@ -44,7 +44,7 @@ function createChain(resolveValue: any = [], returningValue?: any) {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockSendAlertNotification.mockReset();
+  mockSendExpoPushNotifications.mockReset();
 });
 
 describe('machineryAlertService', () => {
@@ -433,12 +433,12 @@ describe('machineryAlertService', () => {
     });
 
     it('processes alerts and marks as sent when successful', async () => {
-      mockSendAlertNotification.mockResolvedValue({ success: true });
-      
+      mockSendExpoPushNotifications.mockResolvedValue({ success: true, sent: 1, failed: 0, errors: [] });
+
       let callCount = 0;
       mockGetConnection.mockImplementation(() => {
         callCount++;
-        
+
         if (callCount === 1) {
           const chain = createChain([]);
           chain.limit = jest.fn().mockResolvedValue([{ id: 1, title: 'Test', message: 'Test msg', type: 'MAINTENANCE_DUE' }]);
@@ -450,8 +450,8 @@ describe('machineryAlertService', () => {
           return chain;
         }
         if (callCount === 3) {
-          const chain = createChain([{ platform: 'ios' }]);
-          chain.where = jest.fn().mockResolvedValue([{ platform: 'ios' }]);
+          const chain = createChain([{ device_token: 'ExponentPushToken[xxx]' }]);
+          chain.where = jest.fn().mockResolvedValue([{ device_token: 'ExponentPushToken[xxx]' }]);
           return chain;
         }
         const chain = createChain(1);
@@ -462,11 +462,11 @@ describe('machineryAlertService', () => {
         });
         return chain;
       });
-      
+
       const result = await sendPendingMaintenanceAlerts(50);
       expect(result.processed).toBe(1);
       expect(result.sent).toBe(1);
-      expect(mockSendAlertNotification).toHaveBeenCalled();
+      expect(mockSendExpoPushNotifications).toHaveBeenCalled();
     });
 
     it('skips alerts without users', async () => {
@@ -488,11 +488,11 @@ describe('machineryAlertService', () => {
       expect(result.skipped).toBe(1);
     });
 
-    it('skips alerts without devices with valid platforms', async () => {
+    it('skips alerts without devices with valid Expo tokens', async () => {
       let callCount = 0;
       mockGetConnection.mockImplementation(() => {
         callCount++;
-        
+
         if (callCount === 1) {
           const chain = createChain([]);
           chain.limit = jest.fn().mockResolvedValue([{ id: 1, title: 'Test', message: 'Test', type: 'MAINTENANCE_DUE' }]);
@@ -507,18 +507,18 @@ describe('machineryAlertService', () => {
         chain.where = jest.fn().mockResolvedValue([]);
         return chain;
       });
-      
+
       const result = await sendPendingMaintenanceAlerts(50);
       expect(result.skipped).toBe(1);
     });
 
-    it('counts failed when sendAlertNotification returns failure', async () => {
-      mockSendAlertNotification.mockResolvedValue({ success: false, errors: ['Push failed'] });
-      
+    it('counts failed when sendExpoPushNotifications returns failure', async () => {
+      mockSendExpoPushNotifications.mockResolvedValue({ success: false, sent: 0, failed: 1, errors: ['Push failed'] });
+
       let callCount = 0;
       mockGetConnection.mockImplementation(() => {
         callCount++;
-        
+
         if (callCount === 1) {
           const chain = createChain([]);
           chain.limit = jest.fn().mockResolvedValue([{ id: 1, title: 'Test', message: 'Test', type: 'MAINTENANCE_DUE' }]);
@@ -529,11 +529,11 @@ describe('machineryAlertService', () => {
           chain.where = jest.fn().mockResolvedValue([{ id_user: 1 }]);
           return chain;
         }
-        const chain = createChain([{ platform: 'android' }]);
-        chain.where = jest.fn().mockResolvedValue([{ platform: 'android' }]);
+        const chain = createChain([{ device_token: 'ExponentPushToken[yyy]' }]);
+        chain.where = jest.fn().mockResolvedValue([{ device_token: 'ExponentPushToken[yyy]' }]);
         return chain;
       });
-      
+
       const result = await sendPendingMaintenanceAlerts(50);
       expect(result.failed).toBe(1);
     });
@@ -555,13 +555,13 @@ describe('machineryAlertService', () => {
       expect(result.failed).toBe(1);
     });
 
-    it('filters out invalid platforms', async () => {
-      mockSendAlertNotification.mockResolvedValue({ success: true });
-      
+    it('sends only to valid Expo tokens', async () => {
+      mockSendExpoPushNotifications.mockResolvedValue({ success: true, sent: 1, failed: 0, errors: [] });
+
       let callCount = 0;
       mockGetConnection.mockImplementation(() => {
         callCount++;
-        
+
         if (callCount === 1) {
           const chain = createChain([]);
           chain.limit = jest.fn().mockResolvedValue([{ id: 1, title: 'Test', message: 'Test', type: 'MAINTENANCE_DUE' }]);
@@ -573,8 +573,8 @@ describe('machineryAlertService', () => {
           return chain;
         }
         if (callCount === 3) {
-          const chain = createChain([{ platform: 'web' }, { platform: 'ios' }]);
-          chain.where = jest.fn().mockResolvedValue([{ platform: 'web' }, { platform: 'ios' }]);
+          const chain = createChain([{ device_token: 'ExponentPushToken[ios-user]' }]);
+          chain.where = jest.fn().mockResolvedValue([{ device_token: 'ExponentPushToken[ios-user]' }]);
           return chain;
         }
         const chain = createChain(1);
@@ -585,13 +585,17 @@ describe('machineryAlertService', () => {
         });
         return chain;
       });
-      
+
       const result = await sendPendingMaintenanceAlerts(50);
       expect(result.sent).toBe(1);
-      expect(mockSendAlertNotification).toHaveBeenCalledWith(
-        expect.objectContaining({
-          platforms: ['ios'],
-        })
+      expect(mockSendExpoPushNotifications).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            to: 'ExponentPushToken[ios-user]',
+            title: 'Test',
+            body: 'Test',
+          }),
+        ])
       );
     });
   });

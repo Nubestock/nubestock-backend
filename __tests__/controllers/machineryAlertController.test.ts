@@ -1,7 +1,4 @@
 jest.mock('../../src/config/logger', () => ({ logger: { error: jest.fn(), info: jest.fn() } }));
-jest.mock('../../src/services/notificationHubService', () => ({
-  registerInstallation: jest.fn().mockResolvedValue(undefined),
-}));
 
 const mockGetConnection = jest.fn();
 const mockTransaction = jest.fn();
@@ -32,9 +29,7 @@ import {
 } from '../../src/controllers/machineryAlertController';
 import { makeContext, makeRequest } from '../helpers/context';
 import { Database } from '../../src/config/database';
-import { registerInstallation } from '../../src/services/notificationHubService';
 
-const mockRegisterInstallation = registerInstallation as jest.MockedFunction<typeof registerInstallation>;
 const db = Database.getInstance();
 
 beforeEach(() => {
@@ -43,7 +38,6 @@ beforeEach(() => {
   mockRequireAuth.mockReset();
   mockTransaction.mockReset();
   mockRequireAuth.mockReturnValue({ success: true, user: { userId: 1 } });
-  mockRegisterInstallation.mockResolvedValue(undefined);
 });
 
 describe('machineryAlertController', () => {
@@ -686,7 +680,6 @@ describe('machineryAlertController', () => {
       }));
       expect(context.res!.status).toBe(200);
       expect(context.res!.body.success).toBe(true);
-      expect(mockRegisterInstallation).toHaveBeenCalled();
     });
 
     it('creates new device', async () => {
@@ -723,7 +716,6 @@ describe('machineryAlertController', () => {
       }));
       expect(context.res!.status).toBe(201);
       expect(context.res!.body.success).toBe(true);
-      expect(mockRegisterInstallation).toHaveBeenCalled();
     });
 
     it('handles string userId from auth', async () => {

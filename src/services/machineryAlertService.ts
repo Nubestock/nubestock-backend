@@ -1,6 +1,6 @@
 import { Database } from '../config/database';
 import { logger } from '../config/logger';
-import { sendAlertNotification } from './notificationHubService';
+import { sendExpoPushNotifications } from './expoPushService';
 
 const db = Database.getInstance();
 
@@ -258,34 +258,50 @@ export async function sendPendingMaintenanceAlerts(limit: number = 50): Promise<
       }
 
       const deviceRows = await db.getConnection()
-        .select('platform')
+        .select('device_token')
         .from('nubestock.tb_ope_user_device')
         .whereIn('id_user', userIds)
         .where('is_active', true);
 
-      const platforms = Array.from(
-        new Set(deviceRows.map((row: any) => row.platform).filter((platform: string) => platform === 'ios' || platform === 'android'))
+      const expoTokens = Array.from(
+        new Set(
+          (deviceRows as { device_token: string }[])
+            .map((row) => row.device_token)
+            .filter((t): t is string => !!t && String(t).startsWith('ExponentPushToken['))
+        )
       );
 
-      if (!platforms.length) {
+      if (!expoTokens.length) {
         skipped++;
         continue;
       }
 
-      const result = await sendAlertNotification({
-        userIds,
+      const messages = expoTokens.map((to) => ({
+        to,
         title: alert.title,
         body: alert.message,
         data: {
           alertId: alert.id,
           type: alert.type,
         },
-        platforms,
-      });
+      }));
 
-      if (result.success) {
+      const result = await sendExpoPushNotifications(messages);
+
+      if (result.success && result.failed === 0) {
         await markAlertAsSent(alert.id);
         sent++;
+      } else if (result.sent > 0) {
+        await markAlertAsSent(alert.id);
+        sent++;
+        if (result.failed > 0) {
+          logger.warn('Envío parcial de alerta', {
+            alertId: alert.id,
+            sent: result.sent,
+            failed: result.failed,
+            errors: result.errors,
+          });
+        }
       } else {
         failed++;
         logger.warn('Fallo en envío de alerta', {
